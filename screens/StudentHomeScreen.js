@@ -1,5 +1,7 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native'; // add this
+import { useCallback, useContext, useState } from 'react';
 import {
+    Image,
     RefreshControl,
     ScrollView,
     StyleSheet,
@@ -104,8 +106,11 @@ export default function StudentHomeScreen({ navigation }) {
         }
     }, []);
 
-    useEffect(() => { fetchAll(); }, [fetchAll]);
-
+    useFocusEffect(
+        useCallback(() => {
+            fetchAll();
+        }, [fetchAll])
+    );
     const onRefresh = () => { setRefreshing(true); fetchAll(); };
 
     const displayName = profile?.display_name || userData?.display_name || userData?.name || 'Student';
@@ -139,9 +144,16 @@ export default function StudentHomeScreen({ navigation }) {
                         )}
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => navigation.navigate('StudentProfile')}>
-                        <View style={s.avatarSmall}>
-                            <Text style={s.avatarSmallText}>{initials(displayName)}</Text>
-                        </View>
+                        {profile?.profile_picture ? (
+                            <Image
+                                source={{ uri: profile.profile_picture }}
+                                style={s.avatarSmall}
+                            />
+                        ) : (
+                            <View style={s.avatarSmall}>
+                                <Text style={s.avatarSmallText}>{initials(displayName)}</Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
                 </View>
             </View>
@@ -150,9 +162,16 @@ export default function StudentHomeScreen({ navigation }) {
                 {/* ── Hero card ────────────────────────────────────────────────── */}
                 <View style={s.heroCard}>
                     <View style={s.heroTop}>
-                        <View style={s.avatarLarge}>
-                            <Text style={s.avatarLargeText}>{initials(displayName)}</Text>
-                        </View>
+                        {profile?.profile_picture ? (
+                            <Image
+                                source={{ uri: profile.profile_picture }}
+                                style={[s.avatarLarge, { borderRadius: 28 }]}
+                            />
+                        ) : (
+                            <View style={s.avatarLarge}>
+                                <Text style={s.avatarLargeText}>{initials(displayName)}</Text>
+                            </View>
+                        )}
                         <View style={{ flex: 1 }}>
                             <Text style={s.heroName}>{displayName}</Text>
                             <Text style={s.heroSub} numberOfLines={1}>
@@ -160,8 +179,10 @@ export default function StudentHomeScreen({ navigation }) {
                             </Text>
                             <Text style={s.heroBatch}>
                                 {profile?.batch || userData?.batch || ''}
-                                {userData?.semester ? `  ·  Sem ${userData.semester}` : ''}
-                                {userData?.roll_number ? `  ·  ${userData.roll_number}` : ''}
+                                {(profile?.semester || userData?.semester)
+                                    ? `  ·  Sem ${profile?.semester ?? userData?.semester}` : ''}
+                                {(profile?.roll_number || userData?.roll_number)
+                                    ? `  ·  ${profile?.roll_number ?? userData?.roll_number}` : ''}
                             </Text>
                         </View>
                     </View>
@@ -225,7 +246,7 @@ export default function StudentHomeScreen({ navigation }) {
                                     key={m.alumni_id}
                                     style={s.mentorCard}
                                     onPress={() =>
-                                        navigation.navigate('AlumniPublicProfile', { id: m.alumni_id })
+                                        navigation.navigate('AlumniPublicProfile', { alumni: m })
                                     }
                                 >
                                     <View style={s.mentorAvatar}>
@@ -348,10 +369,10 @@ export default function StudentHomeScreen({ navigation }) {
                     </View>
                 )}
 
-                {/* ── Logout ───────────────────────────────────────────────────── */}
+                {/* 
                 <TouchableOpacity style={s.logoutBtn} onPress={logout}>
                     <Text style={s.logoutText}>Log out</Text>
-                </TouchableOpacity>
+                </TouchableOpacity> */}
             </View>
         </ScrollView>
     );

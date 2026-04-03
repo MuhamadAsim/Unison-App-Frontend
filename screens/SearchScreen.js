@@ -15,39 +15,52 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { searchAlumni, searchOpportunities, searchUserByUsername } from '../services/api';
+import {
+  getAllSkills,
+  searchAlumni,
+  searchOpportunities,
+  searchUserByUsername,
+} from '../services/api';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ─── Responsive Scaling ──────────────────────────────────────────────────────
-const scale = (size) => (SCREEN_WIDTH / 375) * size; // 375 is base width (iPhone 6/7/8)
+const scale = (size) => (SCREEN_WIDTH / 375) * size;
 const verticalScale = (size) => (SCREEN_HEIGHT / 812) * size;
 const moderateScale = (size, factor = 0.5) => size + (scale(size) - size) * factor;
 
-// ─── Design Tokens (matches app) ─────────────────────────────────────────────
+// ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
-  primary:       '#4F46E5',
-  primaryDark:   '#3730A3',
-  primarySoft:   '#EEF2FF',
+  primary: '#4F46E5',
+  primaryDark: '#3730A3',
+  primarySoft: '#EEF2FF',
   primaryBorder: '#C7D2FE',
-  bg:            '#F8F8FC',
-  card:          '#FFFFFF',
-  text:          '#0F0F23',
-  subtext:       '#4B5563',
-  muted:         '#9CA3AF',
-  border:        '#E5E7EB',
-  divider:       '#F3F4F6',
-  green:         '#059669', greenSoft: '#D1FAE5',
-  amber:         '#D97706', amberSoft: '#FEF3C7',
-  blue:          '#2563EB', blueSoft:  '#DBEAFE',
-  coral:         '#DC2626', coralSoft: '#FEE2E2',
-  shadow:        'rgba(79,70,229,0.10)',
+  bg: '#F8F8FC',
+  card: '#FFFFFF',
+  text: '#0F0F23',
+  subtext: '#4B5563',
+  muted: '#9CA3AF',
+  border: '#E5E7EB',
+  divider: '#F3F4F6',
+  green: '#059669', greenSoft: '#D1FAE5',
+  amber: '#D97706', amberSoft: '#FEF3C7',
+  blue: '#2563EB', blueSoft: '#DBEAFE',
+  coral: '#DC2626', coralSoft: '#FEE2E2',
+  shadow: 'rgba(79,70,229,0.10)',
 };
 
 const TABS = [
-  { key: 'alumni',        label: 'Alumni',        icon: 'people-outline'        },
-  { key: 'opportunities', label: 'Opportunities', icon: 'briefcase-outline'     },
-  { key: 'users',         label: 'Find User',     icon: 'search-outline' }, // Fixed icon
+  { key: 'alumni', label: 'Alumni', icon: 'people-outline' },
+  { key: 'opportunities', label: 'Opportunities', icon: 'briefcase-outline' },
+  { key: 'users', label: 'Find User', icon: 'search-outline' },
+];
+
+const MOCK_SKILLS = [
+  'JavaScript', 'React', 'React Native', 'Node.js', 'Python', 'Java',
+  'Swift', 'Kotlin', 'Flutter', 'UI/UX', 'Product Management',
+  'Data Science', 'Machine Learning', 'Cloud Computing', 'DevOps',
+  'GraphQL', 'TypeScript', 'Vue.js', 'Angular', 'PHP', 'Ruby on Rails',
+  'SQL', 'MongoDB', 'PostgreSQL', 'Firebase', 'AWS', 'Azure', 'Docker',
 ];
 
 const initials = (name = '') =>
@@ -60,7 +73,7 @@ const avatarColor = (name = '') => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-// ─── Responsive Avatar ───────────────────────────────────────────────────────
+// ─── Avatar ───────────────────────────────────────────────────────────────────
 function Avatar({ name = '', uri, size = moderateScale(44) }) {
   const [imgError, setImgError] = useState(false);
   const color = avatarColor(name);
@@ -85,7 +98,7 @@ function Avatar({ name = '', uri, size = moderateScale(44) }) {
   );
 }
 
-// ─── Responsive Skill Pill ───────────────────────────────────────────────────
+// ─── Skill Pill ───────────────────────────────────────────────────────────────
 function SkillPill({ label, small }) {
   return (
     <View style={[sp.pill, small && sp.pillSmall]}>
@@ -94,16 +107,16 @@ function SkillPill({ label, small }) {
   );
 }
 const sp = StyleSheet.create({
-  pill:      { 
-    backgroundColor: C.primarySoft, 
-    borderRadius: moderateScale(20), 
-    paddingHorizontal: moderateScale(10), 
-    paddingVertical: verticalScale(4), 
-    borderWidth: 1, 
-    borderColor: C.primaryBorder 
+  pill: {
+    backgroundColor: C.primarySoft,
+    borderRadius: moderateScale(20),
+    paddingHorizontal: moderateScale(10),
+    paddingVertical: verticalScale(4),
+    borderWidth: 1,
+    borderColor: C.primaryBorder,
   },
   pillSmall: { paddingHorizontal: moderateScale(8), paddingVertical: verticalScale(2) },
-  text:      { fontSize: moderateScale(12), fontWeight: '600', color: C.primary },
+  text: { fontSize: moderateScale(12), fontWeight: '600', color: C.primary },
   textSmall: { fontSize: moderateScale(11) },
 });
 
@@ -123,7 +136,7 @@ function AlumniCard({ item, onPress }) {
         <Text style={ac.name} numberOfLines={1}>{item.display_name}</Text>
         {(item.role || item.company) ? (
           <View style={ac.metaRow}>
-            {item.role   && <Text style={ac.role} numberOfLines={1}>{item.role}</Text>}
+            {item.role && <Text style={ac.role} numberOfLines={1}>{item.role}</Text>}
             {item.role && item.company && <Text style={ac.sep}>·</Text>}
             {item.company && (
               <View style={ac.companyRow}>
@@ -152,44 +165,41 @@ const ac = StyleSheet.create({
   card: {
     flexDirection: 'row', alignItems: 'flex-start',
     backgroundColor: C.card,
-    borderRadius: moderateScale(16), 
-    borderWidth: 1, 
+    borderRadius: moderateScale(16),
+    borderWidth: 1,
     borderColor: C.border,
-    padding: moderateScale(14), 
-    marginBottom: verticalScale(10), 
+    padding: moderateScale(14),
+    marginBottom: verticalScale(10),
     gap: moderateScale(12),
-    shadowColor: '#000', 
-    shadowOpacity: 0.04, 
-    shadowRadius: 6, 
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
     elevation: 2,
   },
-  left:       { position: 'relative' },
-  onlineDot:  { 
-    position: 'absolute', 
-    bottom: moderateScale(2), 
-    right: moderateScale(2), 
-    width: moderateScale(10), 
-    height: moderateScale(10), 
-    borderRadius: moderateScale(5), 
-    backgroundColor: C.green, 
-    borderWidth: moderateScale(2), 
-    borderColor: C.card 
+  left: { position: 'relative' },
+  onlineDot: {
+    position: 'absolute',
+    bottom: moderateScale(2), right: moderateScale(2),
+    width: moderateScale(10), height: moderateScale(10),
+    borderRadius: moderateScale(5),
+    backgroundColor: C.green,
+    borderWidth: moderateScale(2), borderColor: C.card,
   },
-  body:       { flex: 1, gap: verticalScale(3) },
-  name:       { fontSize: moderateScale(15), fontWeight: '700', color: C.text },
-  metaRow:    { flexDirection: 'row', alignItems: 'center', gap: moderateScale(5), flexWrap: 'wrap' },
-  role:       { fontSize: moderateScale(12), color: C.subtext, fontWeight: '500' },
-  sep:        { fontSize: moderateScale(12), color: C.muted },
+  body: { flex: 1, gap: verticalScale(3) },
+  name: { fontSize: moderateScale(15), fontWeight: '700', color: C.text },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(5), flexWrap: 'wrap' },
+  role: { fontSize: moderateScale(12), color: C.subtext, fontWeight: '500' },
+  sep: { fontSize: moderateScale(12), color: C.muted },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(3) },
-  company:    { fontSize: moderateScale(12), color: C.muted },
-  skillsRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: moderateScale(5), marginTop: verticalScale(5) },
+  company: { fontSize: moderateScale(12), color: C.muted },
+  skillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: moderateScale(5), marginTop: verticalScale(5) },
 });
 
 // ─── Opportunity Card ─────────────────────────────────────────────────────────
 function OpportunityCard({ item, onPress }) {
   const typeColor = item.type === 'internship'
-    ? { text: C.amber,  bg: C.amberSoft }
-    : { text: C.green,  bg: C.greenSoft };
+    ? { text: C.amber, bg: C.amberSoft }
+    : { text: C.green, bg: C.greenSoft };
 
   return (
     <TouchableOpacity style={oc.card} onPress={onPress} activeOpacity={0.82}>
@@ -237,49 +247,41 @@ function OpportunityCard({ item, onPress }) {
 const oc = StyleSheet.create({
   card: {
     backgroundColor: C.card,
-    borderRadius: moderateScale(16), 
-    borderWidth: 1, 
-    borderColor: C.border,
-    padding: moderateScale(14), 
+    borderRadius: moderateScale(16),
+    borderWidth: 1, borderColor: C.border,
+    padding: moderateScale(14),
     marginBottom: verticalScale(10),
-    shadowColor: '#000', 
-    shadowOpacity: 0.04, 
-    shadowRadius: 6, 
-    elevation: 2,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
     gap: verticalScale(8),
   },
-  top:        { flexDirection: 'row', gap: moderateScale(12), alignItems: 'flex-start' },
-  iconWrap:   { 
-    width: moderateScale(42), 
-    height: moderateScale(42), 
-    borderRadius: moderateScale(12), 
-    backgroundColor: C.primarySoft, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  top: { flexDirection: 'row', gap: moderateScale(12), alignItems: 'flex-start' },
+  iconWrap: {
+    width: moderateScale(42), height: moderateScale(42),
+    borderRadius: moderateScale(12),
+    backgroundColor: C.primarySoft,
+    justifyContent: 'center', alignItems: 'center',
   },
-  title:      { fontSize: moderateScale(14), fontWeight: '700', color: C.text, marginBottom: verticalScale(3), paddingRight: moderateScale(8) },
+  title: { fontSize: moderateScale(14), fontWeight: '700', color: C.text, marginBottom: verticalScale(3), paddingRight: moderateScale(8) },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(4) },
-  company:    { fontSize: moderateScale(12), color: C.muted },
-  typeBadge:  { borderRadius: moderateScale(20), paddingHorizontal: moderateScale(10), paddingVertical: verticalScale(4), alignSelf: 'flex-start' },
-  typeText:   { fontSize: moderateScale(11), fontWeight: '700' },
-  locationRow:{ flexDirection: 'row', alignItems: 'center', gap: moderateScale(4) },
-  location:   { fontSize: moderateScale(12), color: C.muted },
-  footer:     { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingTop: verticalScale(6), 
-    borderTopWidth: 1, 
-    borderTopColor: C.divider 
+  company: { fontSize: moderateScale(12), color: C.muted },
+  typeBadge: { borderRadius: moderateScale(20), paddingHorizontal: moderateScale(10), paddingVertical: verticalScale(4), alignSelf: 'flex-start' },
+  typeText: { fontSize: moderateScale(11), fontWeight: '700' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(4) },
+  location: { fontSize: moderateScale(12), color: C.muted },
+  footer: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingTop: verticalScale(6), borderTopWidth: 1, borderTopColor: C.divider,
   },
-  date:       { fontSize: moderateScale(11), color: C.muted },
-  viewRow:    { flexDirection: 'row', alignItems: 'center', gap: moderateScale(4) },
-  viewText:   { fontSize: moderateScale(12), fontWeight: '700', color: C.primary },
+  date: { fontSize: moderateScale(11), color: C.muted },
+  viewRow: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(4) },
+  viewText: { fontSize: moderateScale(12), fontWeight: '700', color: C.primary },
 });
 
-// ─── User Result Card ─────────────────────────────────────────────────────────
+// ─── User Card ────────────────────────────────────────────────────────────────
 function UserCard({ item }) {
-  const isAlumni = item.role === 'alumni';
+  // FIX: handle multiple possible role field names from API
+  const isAlumni = item.role === 'alumni' || item.user_type === 'alumni' || item.account_type === 'alumni';
+
   return (
     <View style={uc.card}>
       <Avatar name={item.display_name} uri={item.profile_picture} size={moderateScale(54)} />
@@ -293,7 +295,6 @@ function UserCard({ item }) {
           </View>
         </View>
         <Text style={uc.username}>@{item.username}</Text>
-
         {(item.job_role || item.company) && (
           <Text style={uc.meta} numberOfLines={1}>
             {[item.job_role, item.company].filter(Boolean).join(' at ')}
@@ -301,8 +302,7 @@ function UserCard({ item }) {
         )}
         {item.degree && (
           <Text style={uc.meta} numberOfLines={1}>
-            <Ionicons name="school-outline" size={moderateScale(11)} color={C.muted} /> {item.degree}
-            {item.graduation_year ? ` · ${item.graduation_year}` : ''}
+            {item.degree}{item.graduation_year ? ` · ${item.graduation_year}` : ''}
           </Text>
         )}
         {item.bio ? (
@@ -325,34 +325,28 @@ function UserCard({ item }) {
 }
 const uc = StyleSheet.create({
   card: {
-    flexDirection: 'row', 
-    gap: moderateScale(14),
+    flexDirection: 'row', gap: moderateScale(14),
     backgroundColor: C.card,
-    borderRadius: moderateScale(16), 
-    borderWidth: 1, 
-    borderColor: C.border,
-    padding: moderateScale(16), 
+    borderRadius: moderateScale(16), borderWidth: 1, borderColor: C.border,
+    padding: moderateScale(16),
     marginBottom: verticalScale(10),
-    shadowColor: '#000', 
-    shadowOpacity: 0.04, 
-    shadowRadius: 6, 
-    elevation: 2,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
   },
-  body:              { flex: 1, gap: verticalScale(4) },
-  nameRow:           { flexDirection: 'row', alignItems: 'center', gap: moderateScale(8), flexWrap: 'wrap' },
-  name:              { fontSize: moderateScale(16), fontWeight: '800', color: C.text },
-  roleBadge:         { borderRadius: moderateScale(20), paddingHorizontal: moderateScale(9), paddingVertical: verticalScale(3) },
-  roleBadgeAlumni:   { backgroundColor: C.greenSoft },
-  roleBadgeStudent:  { backgroundColor: C.blueSoft },
-  roleText:          { fontSize: moderateScale(10), fontWeight: '700' },
-  roleTextAlumni:    { color: C.green },
-  roleTextStudent:   { color: C.blue },
-  username:          { fontSize: moderateScale(12), color: C.muted, fontWeight: '500' },
-  meta:              { fontSize: moderateScale(12), color: C.subtext },
-  bio:               { fontSize: moderateScale(12), color: C.muted, lineHeight: moderateScale(17), marginTop: verticalScale(2), fontStyle: 'italic' },
-  skillsRow:         { flexDirection: 'row', flexWrap: 'wrap', gap: moderateScale(5), marginTop: verticalScale(4) },
-  linkedInRow:       { flexDirection: 'row', alignItems: 'center', gap: moderateScale(4), marginTop: verticalScale(4) },
-  linkedInText:      { fontSize: moderateScale(12), color: '#0A66C2', fontWeight: '600' },
+  body: { flex: 1, gap: verticalScale(4) },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(8), flexWrap: 'wrap' },
+  name: { fontSize: moderateScale(16), fontWeight: '800', color: C.text },
+  roleBadge: { borderRadius: moderateScale(20), paddingHorizontal: moderateScale(9), paddingVertical: verticalScale(3) },
+  roleBadgeAlumni: { backgroundColor: C.greenSoft },
+  roleBadgeStudent: { backgroundColor: C.blueSoft },
+  roleText: { fontSize: moderateScale(10), fontWeight: '700' },
+  roleTextAlumni: { color: C.green },
+  roleTextStudent: { color: C.blue },
+  username: { fontSize: moderateScale(12), color: C.muted, fontWeight: '500' },
+  meta: { fontSize: moderateScale(12), color: C.subtext },
+  bio: { fontSize: moderateScale(12), color: C.muted, lineHeight: moderateScale(17), marginTop: verticalScale(2), fontStyle: 'italic' },
+  skillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: moderateScale(5), marginTop: verticalScale(4) },
+  linkedInRow: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(4), marginTop: verticalScale(4) },
+  linkedInText: { fontSize: moderateScale(12), color: '#0A66C2', fontWeight: '600' },
 });
 
 // ─── Filter Chip ──────────────────────────────────────────────────────────────
@@ -373,24 +367,19 @@ function FilterChip({ label, active, onPress, onClear }) {
   );
 }
 const fc = StyleSheet.create({
-  chip:      { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: moderateScale(5), 
-    borderWidth: 1.5, 
-    borderColor: C.border, 
-    borderRadius: moderateScale(20), 
-    paddingHorizontal: moderateScale(12), 
-    paddingVertical: verticalScale(7), 
-    backgroundColor: C.card, 
-    marginRight: moderateScale(8) 
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: moderateScale(5),
+    borderWidth: 1.5, borderColor: C.border,
+    borderRadius: moderateScale(20),
+    paddingHorizontal: moderateScale(12), paddingVertical: verticalScale(7),
+    backgroundColor: C.card, marginRight: moderateScale(8),
   },
-  chipActive:{ borderColor: C.primary, backgroundColor: C.primarySoft },
-  text:      { fontSize: moderateScale(13), color: C.subtext, fontWeight: '500' },
-  textActive:{ color: C.primary, fontWeight: '700' },
+  chipActive: { borderColor: C.primary, backgroundColor: C.primarySoft },
+  text: { fontSize: moderateScale(13), color: C.subtext, fontWeight: '500' },
+  textActive: { color: C.primary, fontWeight: '700' },
 });
 
-// ─── Skills Bottom Sheet ─────────────────────────────────────────────────────
+// ─── Skills Bottom Sheet ──────────────────────────────────────────────────────
 function SkillSheet({ visible, skills, selected, onSelect, onClose }) {
   const [search, setSearch] = useState('');
   const filtered = skills.filter(s => s.toLowerCase().includes(search.toLowerCase()));
@@ -415,7 +404,7 @@ function SkillSheet({ visible, skills, selected, onSelect, onClose }) {
         </View>
         <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: SCREEN_HEIGHT * 0.4 }}>
           <TouchableOpacity
-            style={[ss.item, !selected && ss.itemActive]}
+            style={ss.item}
             onPress={() => { onSelect(null); onClose(); }}
           >
             <Text style={[ss.itemText, !selected && ss.itemTextActive]}>All Skills</Text>
@@ -424,7 +413,7 @@ function SkillSheet({ visible, skills, selected, onSelect, onClose }) {
           {filtered.map(skill => (
             <TouchableOpacity
               key={skill}
-              style={[ss.item, selected === skill && ss.itemActive]}
+              style={ss.item}
               onPress={() => { onSelect(skill); onClose(); }}
             >
               <Text style={[ss.itemText, selected === skill && ss.itemTextActive]}>{skill}</Text>
@@ -437,16 +426,32 @@ function SkillSheet({ visible, skills, selected, onSelect, onClose }) {
   );
 }
 const ss = StyleSheet.create({
-  overlay:     { ...StyleSheet.absoluteFillObject, zIndex: 100, justifyContent: 'flex-end' },
-  backdrop:    { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet:       { backgroundColor: C.card, borderTopLeftRadius: moderateScale(24), borderTopRightRadius: moderateScale(24), padding: moderateScale(20), paddingBottom: verticalScale(40) },
-  handle:      { width: moderateScale(36), height: verticalScale(4), borderRadius: moderateScale(2), backgroundColor: C.border, alignSelf: 'center', marginBottom: verticalScale(16) },
-  title:       { fontSize: moderateScale(17), fontWeight: '800', color: C.text, marginBottom: verticalScale(14) },
-  searchWrap:  { flexDirection: 'row', alignItems: 'center', gap: moderateScale(8), backgroundColor: C.bg, borderRadius: moderateScale(12), borderWidth: 1, borderColor: C.border, paddingHorizontal: moderateScale(12), paddingVertical: verticalScale(10), marginBottom: verticalScale(8) },
+  overlay: { ...StyleSheet.absoluteFillObject, zIndex: 100, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: {
+    backgroundColor: C.card,
+    borderTopLeftRadius: moderateScale(24), borderTopRightRadius: moderateScale(24),
+    padding: moderateScale(20), paddingBottom: verticalScale(40),
+  },
+  handle: {
+    width: moderateScale(36), height: verticalScale(4), borderRadius: moderateScale(2),
+    backgroundColor: C.border, alignSelf: 'center', marginBottom: verticalScale(16),
+  },
+  title: { fontSize: moderateScale(17), fontWeight: '800', color: C.text, marginBottom: verticalScale(14) },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: moderateScale(8),
+    backgroundColor: C.bg, borderRadius: moderateScale(12),
+    borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: moderateScale(12), paddingVertical: verticalScale(10),
+    marginBottom: verticalScale(8),
+  },
   searchInput: { flex: 1, fontSize: moderateScale(14), color: C.text },
-  item:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: verticalScale(13), borderBottomWidth: 1, borderBottomColor: C.divider },
-  itemActive:  { },
-  itemText:    { fontSize: moderateScale(14), color: C.subtext, fontWeight: '500' },
+  item: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: verticalScale(13),
+    borderBottomWidth: 1, borderBottomColor: C.divider,
+  },
+  itemText: { fontSize: moderateScale(14), color: C.subtext, fontWeight: '500' },
   itemTextActive: { color: C.primary, fontWeight: '700' },
 });
 
@@ -463,55 +468,50 @@ function EmptyState({ icon, title, subtitle }) {
   );
 }
 const es = StyleSheet.create({
-  wrap:    { alignItems: 'center', paddingTop: verticalScale(60), gap: verticalScale(8), paddingHorizontal: moderateScale(32) },
-  iconWrap:{ width: moderateScale(72), height: moderateScale(72), borderRadius: moderateScale(36), backgroundColor: C.divider, justifyContent: 'center', alignItems: 'center', marginBottom: verticalScale(4) },
-  title:   { fontSize: moderateScale(17), fontWeight: '700', color: C.subtext },
-  sub:     { fontSize: moderateScale(13), color: C.muted, textAlign: 'center', lineHeight: moderateScale(20) },
+  wrap: {
+    alignItems: 'center', paddingTop: verticalScale(60),
+    gap: verticalScale(8), paddingHorizontal: moderateScale(32),
+  },
+  iconWrap: {
+    width: moderateScale(72), height: moderateScale(72),
+    borderRadius: moderateScale(36), backgroundColor: C.divider,
+    justifyContent: 'center', alignItems: 'center', marginBottom: verticalScale(4),
+  },
+  title: { fontSize: moderateScale(17), fontWeight: '700', color: C.subtext },
+  sub: { fontSize: moderateScale(13), color: C.muted, textAlign: 'center', lineHeight: moderateScale(20) },
 });
-
-// ─── Helper function to get skills ───────────────────────────────────────────
-// If your API doesn't have a getAllSkills endpoint, you can use this mock data
-const getMockSkills = () => {
-  return [
-    'JavaScript', 'React', 'React Native', 'Node.js', 'Python', 'Java', 
-    'Swift', 'Kotlin', 'Flutter', 'UI/UX', 'Product Management', 
-    'Data Science', 'Machine Learning', 'Cloud Computing', 'DevOps',
-    'GraphQL', 'TypeScript', 'Vue.js', 'Angular', 'PHP', 'Ruby on Rails',
-    'SQL', 'MongoDB', 'PostgreSQL', 'Firebase', 'AWS', 'Azure', 'Docker'
-  ];
-};
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function SearchScreen({ navigation }) {
-  const [tab, setTab]   = useState('alumni');
+  const [tab, setTab] = useState('alumni');
 
   // Search state
-  const [query, setQuery]             = useState('');
+  const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
 
   // Alumni filters
-  const [selectedSkill,  setSelectedSkill]  = useState(null);
-  const [filterCompany,  setFilterCompany]  = useState('');
-  const [filterBatch,    setFilterBatch]    = useState('');
-  const [filterDegree,   setFilterDegree]   = useState('');
-  const [showFilters,    setShowFilters]     = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState(null);
+  const [filterCompany, setFilterCompany] = useState('');
+  const [filterBatch, setFilterBatch] = useState('');
+  const [filterDegree, setFilterDegree] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [skillSheetOpen, setSkillSheetOpen] = useState(false);
 
   // Username search
-  const [usernameQuery,  setUsernameQuery]  = useState('');
-  const [userResult,     setUserResult]     = useState(null);
-  const [userSearched,   setUserSearched]   = useState(false);
-  const [userLoading,    setUserLoading]    = useState(false);
-  const [userError,      setUserError]      = useState('');
+  const [usernameQuery, setUsernameQuery] = useState('');
+  const [userResult, setUserResult] = useState(null);
+  const [userSearched, setUserSearched] = useState(false);
+  const [userLoading, setUserLoading] = useState(false);
+  const [userError, setUserError] = useState('');
 
   // Data
-  const [skills,   setSkills]   = useState([]);
-  const [results,  setResults]  = useState([]);
-  const [loading,  setLoading]  = useState(false);
+  const [skills, setSkills] = useState([]);
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // Animations
-  const filterHeight = useRef(new Animated.Value(0)).current;
+  // FIX: filter panel animation — actually applied to the panel now
+  const filterAnim = useRef(new Animated.Value(0)).current;
 
   // ── Debounce query ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -519,37 +519,28 @@ export default function SearchScreen({ navigation }) {
     return () => clearTimeout(t);
   }, [query]);
 
-  // ── Load skills ─────────────────────────────────────────────────────────────
+  // ── Load skills from API, fall back to mock data ────────────────────────────
+  // FIX: direct import instead of fragile dynamic import
   useEffect(() => {
-    // Try to load skills from API if available, otherwise use mock data
-    const loadSkills = async () => {
-      try {
-        // Try to import the function dynamically if it exists
-        const api = await import('../services/api');
-        if (api.getAllSkills) {
-          const res = await api.getAllSkills();
-          setSkills(res.data || getMockSkills());
-        } else {
-          // Use mock data if function doesn't exist
-          setSkills(getMockSkills());
-        }
-      } catch (error) {
-        console.log('Using mock skills data');
-        setSkills(getMockSkills());
-      }
-    };
-    
-    loadSkills();
+    getAllSkills()
+      .then(res => setSkills(res.data?.length ? res.data : MOCK_SKILLS))
+      .catch(() => setSkills(MOCK_SKILLS));
   }, []);
 
-  // ── Toggle filter panel ─────────────────────────────────────────────────────
+  // ── Animate filter panel ────────────────────────────────────────────────────
+  // FIX: animation is now actually used (applied to Animated.View below)
   useEffect(() => {
-    Animated.timing(filterHeight, {
+    Animated.timing(filterAnim, {
       toValue: showFilters ? 1 : 0,
       duration: 220,
       useNativeDriver: false,
     }).start();
   }, [showFilters]);
+
+  const filterPanelMaxHeight = filterAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 300],
+  });
 
   // ── Active filter count ─────────────────────────────────────────────────────
   const activeFilters = [selectedSkill, filterCompany, filterBatch, filterDegree].filter(Boolean).length;
@@ -562,40 +553,38 @@ export default function SearchScreen({ navigation }) {
       setHasSearched(true);
       if (tab === 'alumni') {
         const params = {};
-        if (debouncedQuery)  params.display_name = debouncedQuery;
-        if (selectedSkill)   params.skill        = selectedSkill;
-        if (filterCompany)   params.company      = filterCompany;
-        if (filterBatch)     params.batch_year   = filterBatch;
-        if (filterDegree)    params.degree       = filterDegree;
-        console.log('🔍 Alumni search params:', params);
+        if (debouncedQuery) params.display_name = debouncedQuery;
+        if (selectedSkill) params.skill = selectedSkill;
+        if (filterCompany) params.company = filterCompany;
+        if (filterBatch) params.batch_year = filterBatch;
+        if (filterDegree) params.degree = filterDegree;
         const res = await searchAlumni(params);
-        console.log('📥 Alumni results:', res.data?.length, 'items');
         setResults(Array.isArray(res.data) ? res.data : []);
       } else {
         const params = {};
-        if (debouncedQuery)  params.title = debouncedQuery;
-        if (selectedSkill)   params.skill = selectedSkill;
-        console.log('🔍 Opportunities search params:', params);
+        if (debouncedQuery) params.title = debouncedQuery;
+        if (selectedSkill) params.skill = selectedSkill;
         const res = await searchOpportunities(params);
-        console.log('📥 Opportunity results:', res.data?.length, 'items');
         setResults(
-          Array.isArray(res.data) ? res.data :
-          res.data?.opportunities || []
+          Array.isArray(res.data) ? res.data : res.data?.opportunities || []
         );
       }
     } catch (e) {
-      console.log('❌ Search error:', e?.response?.data);
       Alert.alert('Search Failed', e.response?.data?.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
   }, [tab, debouncedQuery, selectedSkill, filterCompany, filterBatch, filterDegree]);
 
+  // FIX: only search if there's a query or active filters — avoids pointless
+  // API call on mount with empty params
   useEffect(() => {
-    if (tab !== 'users') performSearch();
+    if (tab !== 'users' && (debouncedQuery || activeFilters > 0)) {
+      performSearch();
+    }
   }, [performSearch, tab]);
 
-  // Reset results on tab change
+  // Reset on tab change
   useEffect(() => {
     setResults([]);
     setQuery('');
@@ -605,6 +594,7 @@ export default function SearchScreen({ navigation }) {
     setUserSearched(false);
     setUserError('');
     setUsernameQuery('');
+    setShowFilters(false);
   }, [tab]);
 
   // ── Username search ─────────────────────────────────────────────────────────
@@ -614,13 +604,10 @@ export default function SearchScreen({ navigation }) {
       setUserLoading(true);
       setUserError('');
       setUserResult(null);
-      console.log('🔍 Username search:', usernameQuery.trim());
       const res = await searchUserByUsername(usernameQuery.trim());
-      console.log('📥 User result:', res.data);
       setUserResult(res.data);
       setUserSearched(true);
     } catch (e) {
-      console.log('❌ User search error:', e?.response?.data);
       setUserSearched(true);
       if (e?.response?.status === 404) {
         setUserError('No user found with that username.');
@@ -642,7 +629,12 @@ export default function SearchScreen({ navigation }) {
   // ── Render item ─────────────────────────────────────────────────────────────
   const renderItem = ({ item }) => {
     if (tab === 'alumni') {
-      return <AlumniCard item={item} onPress={() => {}} />;
+      return (
+        <AlumniCard
+          item={item}
+          onPress={() => navigation.navigate('AlumniPublicProfile', { alumni: item })}
+        />
+      );
     }
     return (
       <OpportunityCard
@@ -653,7 +645,7 @@ export default function SearchScreen({ navigation }) {
   };
 
   const listHeader = (
-    <View style={{ paddingHorizontal: moderateScale(16), paddingTop: verticalScale(8), paddingBottom: verticalScale(4) }}>
+    <View style={{ paddingTop: verticalScale(8), paddingBottom: verticalScale(4) }}>
       {hasSearched && !loading && (
         <Text style={s.resultCount}>
           {results.length} result{results.length !== 1 ? 's' : ''} found
@@ -710,7 +702,11 @@ export default function SearchScreen({ navigation }) {
                 onSubmitEditing={handleUserSearch}
               />
               {usernameQuery.length > 0 && (
-                <TouchableOpacity onPress={() => { setUsernameQuery(''); setUserResult(null); setUserSearched(false); }}>
+                <TouchableOpacity onPress={() => {
+                  setUsernameQuery('');
+                  setUserResult(null);
+                  setUserSearched(false);
+                }}>
                   <Ionicons name="close-circle" size={moderateScale(18)} color={C.muted} />
                 </TouchableOpacity>
               )}
@@ -765,7 +761,11 @@ export default function SearchScreen({ navigation }) {
                 onPress={() => setShowFilters(v => !v)}
                 activeOpacity={0.8}
               >
-                <Ionicons name="options-outline" size={moderateScale(18)} color={activeFilters > 0 ? C.primary : C.subtext} />
+                <Ionicons
+                  name="options-outline"
+                  size={moderateScale(18)}
+                  color={activeFilters > 0 ? C.primary : C.subtext}
+                />
                 {activeFilters > 0 && (
                   <View style={s.filterBadge}>
                     <Text style={s.filterBadgeText}>{activeFilters}</Text>
@@ -782,26 +782,23 @@ export default function SearchScreen({ navigation }) {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={s.activeFiltersScroll}
             >
-              {selectedSkill  && <FilterChip label={selectedSkill}  active onClear={() => setSelectedSkill(null)} />}
-              {filterCompany  && <FilterChip label={filterCompany}  active onClear={() => setFilterCompany('')} />}
-              {filterBatch    && <FilterChip label={`Batch ${filterBatch}`} active onClear={() => setFilterBatch('')} />}
-              {filterDegree   && <FilterChip label={filterDegree}   active onClear={() => setFilterDegree('')} />}
+              {selectedSkill && <FilterChip label={selectedSkill} active onClear={() => setSelectedSkill(null)} />}
+              {filterCompany && <FilterChip label={filterCompany} active onClear={() => setFilterCompany('')} />}
+              {filterBatch && <FilterChip label={`Batch ${filterBatch}`} active onClear={() => setFilterBatch('')} />}
+              {filterDegree && <FilterChip label={filterDegree} active onClear={() => setFilterDegree('')} />}
               <TouchableOpacity onPress={clearAllFilters} style={s.clearAll}>
                 <Text style={s.clearAllText}>Clear all</Text>
               </TouchableOpacity>
             </ScrollView>
           )}
 
-          {/* Expandable filter panel */}
-          {tab === 'alumni' && showFilters && (
-            <View style={s.filterPanel}>
+          {/* FIX: Animated filter panel — animation is now actually applied */}
+          {tab === 'alumni' && (
+            <Animated.View style={[s.filterPanel, { maxHeight: filterPanelMaxHeight, overflow: 'hidden' }]}>
               {/* Skill */}
               <View style={s.filterRow}>
                 <Text style={s.filterLabel}>Skill</Text>
-                <TouchableOpacity
-                  style={s.filterInput}
-                  onPress={() => setSkillSheetOpen(true)}
-                >
+                <TouchableOpacity style={s.filterInput} onPress={() => setSkillSheetOpen(true)}>
                   <Text style={[s.filterInputText, !selectedSkill && { color: C.muted }]}>
                     {selectedSkill || 'Any skill'}
                   </Text>
@@ -823,7 +820,7 @@ export default function SearchScreen({ navigation }) {
                 </View>
               </View>
 
-              {/* Batch & Degree in a row */}
+              {/* Batch & Degree */}
               <View style={{ flexDirection: 'row', gap: moderateScale(10) }}>
                 <View style={[s.filterRow, { flex: 1 }]}>
                   <Text style={s.filterLabel}>Batch Year</Text>
@@ -852,7 +849,7 @@ export default function SearchScreen({ navigation }) {
                   </View>
                 </View>
               </View>
-            </View>
+            </Animated.View>
           )}
 
           {/* Skill filter for opportunities */}
@@ -917,24 +914,21 @@ export default function SearchScreen({ navigation }) {
   );
 }
 
-// ─── Responsive Styles ───────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
 
-  // Header
   header: {
     paddingTop: Platform.OS === 'ios' ? verticalScale(56) : verticalScale(24),
     paddingHorizontal: moderateScale(20),
     paddingBottom: verticalScale(14),
     backgroundColor: C.card,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    borderBottomWidth: 1, borderBottomColor: C.border,
   },
   headerTitle: { fontSize: moderateScale(26), fontWeight: '900', color: C.text, letterSpacing: -0.5 },
-  headerSub:   { fontSize: moderateScale(13), color: C.muted, marginTop: verticalScale(2) },
+  headerSub: { fontSize: moderateScale(13), color: C.muted, marginTop: verticalScale(2) },
 
-  // Tabs
-  tabsWrap:   { backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.border },
+  tabsWrap: { backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.border },
   tabsScroll: { paddingHorizontal: moderateScale(16), paddingVertical: verticalScale(10), gap: moderateScale(8) },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: moderateScale(6),
@@ -942,11 +936,10 @@ const s = StyleSheet.create({
     borderRadius: moderateScale(20), borderWidth: 1.5, borderColor: C.border,
     backgroundColor: C.bg,
   },
-  tabActive:     { borderColor: C.primary, backgroundColor: C.primarySoft },
-  tabText:       { fontSize: moderateScale(13), fontWeight: '600', color: C.muted },
+  tabActive: { borderColor: C.primary, backgroundColor: C.primarySoft },
+  tabText: { fontSize: moderateScale(13), fontWeight: '600', color: C.muted },
   tabTextActive: { color: C.primary, fontWeight: '700' },
 
-  // Search bar
   searchBarWrap: {
     flexDirection: 'row', alignItems: 'center', gap: moderateScale(10),
     paddingHorizontal: moderateScale(16), paddingVertical: verticalScale(12),
@@ -961,49 +954,46 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: moderateScale(14), color: C.text },
   searchBtn: {
-    width: moderateScale(46), 
-    height: moderateScale(46), 
+    width: moderateScale(46), height: moderateScale(46),
     borderRadius: moderateScale(14),
     backgroundColor: C.primary,
     justifyContent: 'center', alignItems: 'center',
   },
   filterToggle: {
-    width: moderateScale(46), 
-    height: moderateScale(46), 
+    width: moderateScale(46), height: moderateScale(46),
     borderRadius: moderateScale(14),
-    backgroundColor: C.bg, 
-    borderWidth: 1.5, 
-    borderColor: C.border,
+    backgroundColor: C.bg, borderWidth: 1.5, borderColor: C.border,
     justifyContent: 'center', alignItems: 'center',
     position: 'relative',
   },
   filterToggleActive: { borderColor: C.primary, backgroundColor: C.primarySoft },
   filterBadge: {
     position: 'absolute', top: -moderateScale(4), right: -moderateScale(4),
-    width: moderateScale(18), height: moderateScale(18), borderRadius: moderateScale(9),
+    width: moderateScale(18), height: moderateScale(18),
+    borderRadius: moderateScale(9),
     backgroundColor: C.primary,
     justifyContent: 'center', alignItems: 'center',
     borderWidth: moderateScale(2), borderColor: C.card,
   },
   filterBadgeText: { fontSize: moderateScale(9), fontWeight: '800', color: '#fff' },
 
-  // Active filters bar
   activeFiltersScroll: { paddingHorizontal: moderateScale(16), paddingVertical: verticalScale(10), alignItems: 'center' },
   clearAll: { paddingHorizontal: moderateScale(10), paddingVertical: verticalScale(7) },
   clearAllText: { fontSize: moderateScale(12), color: C.coral, fontWeight: '700' },
 
-  // Filter panel
   filterPanel: {
     backgroundColor: C.card,
-    paddingHorizontal: moderateScale(16), 
-    paddingTop: verticalScale(12), 
+    paddingHorizontal: moderateScale(16),
+    paddingTop: verticalScale(12),
     paddingBottom: verticalScale(16),
-    borderBottomWidth: 1, 
-    borderBottomColor: C.border,
+    borderBottomWidth: 1, borderBottomColor: C.border,
     gap: verticalScale(10),
   },
-  filterRow:      { gap: verticalScale(6) },
-  filterLabel:    { fontSize: moderateScale(11), fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  filterRow: { gap: verticalScale(6) },
+  filterLabel: {
+    fontSize: moderateScale(11), fontWeight: '700', color: C.muted,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
   filterInput: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderWidth: 1.5, borderColor: C.border, borderRadius: moderateScale(10),
@@ -1012,13 +1002,10 @@ const s = StyleSheet.create({
   },
   filterInputText: { flex: 1, fontSize: moderateScale(14), color: C.text },
 
-  // Result count
   resultCount: { fontSize: moderateScale(12), color: C.muted, fontWeight: '600', marginBottom: verticalScale(4) },
 
-  // List
   listContent: { paddingHorizontal: moderateScale(16), paddingBottom: verticalScale(40) },
 
-  // Loading
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: verticalScale(10) },
   loadingText: { fontSize: moderateScale(14), color: C.muted },
 });

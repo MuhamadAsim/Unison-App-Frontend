@@ -10,6 +10,7 @@ import EditProfileScreen from '../screens/EditProfileScreen';
 import EditStudentProfileScreen from '../screens/EditStudentProfileScreen';
 import LoginScreen from '../screens/LoginScreen';
 import MyOpportunitiesScreen from '../screens/MyOpportunitiesScreen';
+import AlumniPublicProfileScreen from '../screens/AlumniPublicProfileScreen';
 import NetworkAnalyticsScreen from '../screens/NetworkAnalyticsScreen';
 import NetworkScreen from '../screens/NetworkScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
@@ -55,10 +56,11 @@ function StudentAppStack() {
 
       {/* Push screens — navigated to from inside tab screens */}
       <Stack.Screen name="StudentProfile" component={StudentProfileScreen} options={{ headerShown: true, title: 'Student Profile' }} />
-      <Stack.Screen name="EditStudentProfile" component={EditStudentProfileScreen} options={{ headerShown: true, title: 'Edit Profile' }} />
-      <Stack.Screen name="OpportunityDetail" component={OpportunityDetailScreen} options={{ headerShown: true, title: 'Opportunity Detail' }} />
-      <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: true, title: 'Notifications' }} />
+      <Stack.Screen name="OpportunityDetail" component={OpportunityDetailScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="NetworkAnalytics" component={NetworkAnalyticsScreen} options={{ headerShown: true, title: 'Network Analytics' }} />
+      <Stack.Screen name="AlumniPublicProfile" component={AlumniPublicProfileScreen} options={{ headerShown: false }} />
+
     </Stack.Navigator>
   );
 }

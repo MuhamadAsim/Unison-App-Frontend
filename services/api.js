@@ -22,6 +22,9 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+
+
+
 // ─── ALUMNI MODULE ────────────────────────────────────────────────────────────
 export const getAlumniProfile = () => api.get(`/alumni/me`);                        // GET  /alumni/me
 export const updateAlumniProfile = (data) => api.put(`/alumni/me`, data);                  // PUT  /alumni/me
@@ -31,20 +34,27 @@ export const deleteWorkExperience = (id) => api.delete(`/alumni/work-experience/
 export const addAlumniSkill = (data) => api.post(`/alumni/skills`, data);             // POST /alumni/skills
 export const deleteAlumniSkill = (skillId) => api.delete(`/alumni/skills/${skillId}`);      // DEL  /alumni/skills/:skill_id
 export const getNetwork = () => api.get(`/alumni/network`);                   // GET  /alumni/network
-export const connectUser = (targetId, data) => api.post(`/alumni/connect/${targetId}`, data); // POST /alumni/connect/:target_id
-export const getConnectionRequests = () => api.get(`/alumni/connections/requests`);      // GET  /alumni/connections/requests
-export const respondToConnection = (senderId, data) => api.patch(`/alumni/connections/requests/${senderId}/respond`, data); // PATCH
 export const getBatchmates = () => api.get(`/alumni/batch-mates`);               // GET  /alumni/batch-mates
+
+
 
 // ─── STUDENT MODULE ───────────────────────────────────────────────────────────
 export const getStudentProfile = () => api.get(`/student/me`);          // GET  /student/me
 export const updateStudentProfile = (data, config = {}) => api.put('/student/me', data, config);
 export const addStudentSkill = (data) => api.post(`/student/skills`, data); // POST /student/skills
 export const getMentors = () => api.get(`/student/mentors`);     // GET  /student/mentors
-export const connectMentor = (targetId) =>                              // POST /student/connect/:target_id
-  api.post(`/student/connect/${targetId}`, { connection_type: 'mentor' });
 export const getStudentConnections = () => api.get(`/student/connections`);   // GET  /student/connections - Get accepted mentorship connections
-export const removeStudentConnection = (targetId) => api.delete(`/student/connections/${targetId}`); // DELETE /student/connections/:target_id - Remove connection/cancel request
+
+
+
+// ─── CONNECTIONS MODULE ───────────────────────────────────────────────────────
+export const getConnectionStatus = (targetId) => api.get(`/connections/status/${targetId}`);             // GET   /connections/status/:target_id
+export const removeConnection = (targetId) => api.delete(`/connections/${targetId}`);                    // DEL   /connections/:target_id
+export const connectUser = (targetId, data) => api.post(`/connections/request/${targetId}`, data);       // POST  /connections/request/:target_id
+export const getConnectionRequests = () => api.get(`/connections/requests`);                             // GET   /connections/requests
+export const respondToConnection = (senderId, data) => api.patch(`/connections/requests/${senderId}/respond`, data); // PATCH /connections/requests/:sender_id/respond
+
+
 
 // ─── OPPORTUNITIES MODULE ─────────────────────────────────────────────────────
 export const getOpportunities = (params) => api.get(`/opportunities`, { params }); // GET  /opportunities
@@ -54,11 +64,15 @@ export const getMyOpportunities = () => api.get(`/opportunities/my-posts`);    /
 export const updateOpportunity = (id, data) => api.put(`/opportunities/${id}`, data); // PUT /opportunities/:id
 export const deleteOpportunity = (id) => api.delete(`/opportunities/${id}`);    // DEL  /opportunities/:id
 
+
+
 // ─── SEARCH MODULE ────────────────────────────────────────────────────────────
 export const searchAlumni = (params) => api.get(`/search/alumni`, { params });        // GET /search/alumni
 export const searchOpportunities = (params) => api.get(`/search/opportunities`, { params }); // GET /search/opportunities
 export const searchUserByUsername = (username) => api.get(`/search/user/${username}`);       // GET /search/user/:username
 export const getAllSkills = () => api.get(`/skills/all`);                       // GET /skills/all
+
+
 
 // ─── NETWORK ANALYTICS MODULE ─────────────────────────────────────────────────
 export const getTopConnected = () => api.get(`/network/centrality`);              // GET /network/centrality
@@ -66,6 +80,8 @@ export const getShortestPath = (from, to) => api.get(`/network/shortest-path`, {
 export const getTopCompanies = () => api.get(`/network/top-companies`);           // GET /network/top-companies
 export const getSkillTrends = () => api.get(`/network/skill-trends`);            // GET /network/skill-trends
 export const getBatchAnalysis = () => api.get(`/network/batch-analysis`);          // GET /network/batch-analysis
+
+
 
 // ─── NOTIFICATIONS MODULE ─────────────────────────────────────────────────────
 export const getNotifications = () => api.get(`/notifications`);                   // GET   /notifications

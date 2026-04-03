@@ -15,13 +15,13 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getMentors,
   getStudentConnections,
-  connectMentor,
-  removeStudentConnection,
+  connectUser,
+  removeConnection,
   searchAlumni,
+  getConnectionStatus,
 } from '../services/api';
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -51,18 +51,8 @@ const TABS = {
   MY_MENTORS: 'my_mentors',
 };
 
-const PENDING_REQUESTS_KEY = '@pending_mentor_requests';
-
-// ─── Mentor Card with Request Status ──────────────────────────────────────────
-function MentorCard({ 
-  mentor, 
-  type, 
-  onConnect, 
-  onDisconnect, 
-  isConnected, 
-  isPending,
-  onCancelRequest 
-}) {
+// ─── Mentor Card ──────────────────────────────────────────────────────────────
+function MentorCard({ mentor, type, onConnect, onDisconnect, onCancelRequest, connectionStatus, statusLoading }) {
   const [loading, setLoading] = useState(false);
 
   const alumniId = mentor.alumni_id || mentor.id;
@@ -70,6 +60,8 @@ function MentorCard({
   const company = mentor.company || '';
   const domain = mentor.domain || '';
   const commonSkills = mentor.common_skills || 0;
+
+  const status = connectionStatus?.status;
 
   const handleConnect = async () => {
     if (loading) return;
@@ -89,11 +81,7 @@ function MentorCard({
       `Cancel connection request to ${name}?`,
       [
         { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes',
-          style: 'destructive',
-          onPress: () => onCancelRequest?.(alumniId),
-        },
+        { text: 'Yes', style: 'destructive', onPress: () => onCancelRequest?.(alumniId) },
       ]
     );
   };
@@ -104,35 +92,35 @@ function MentorCard({
       `Remove ${name} from your mentors?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => onDisconnect(alumniId),
-        },
+        { text: 'Remove', style: 'destructive', onPress: () => onDisconnect(alumniId) },
       ]
     );
   };
 
-  // Determine button state
   let buttonContent = null;
-  
+
   if (type === TABS.MY_MENTORS) {
-    // Already connected - show remove button
+    // My Mentors tab never needs a status check — just show remove
     buttonContent = (
       <TouchableOpacity style={styles.removeBtn} onPress={handleDisconnect}>
         <Ionicons name="close" size={20} color={C.coral} />
       </TouchableOpacity>
     );
-  } else if (isConnected) {
-    // Already connected (shouldn't appear in suggested, but just in case)
+  } else if (statusLoading) {
+    // ── FIX: don't flash "Connect" while real status is still loading ─────────
+    buttonContent = (
+      <View style={styles.statusLoadingWrap}>
+        <ActivityIndicator size="small" color={C.muted} />
+      </View>
+    );
+  } else if (status === 'connected') {
     buttonContent = (
       <View style={styles.disabledBtn}>
         <Ionicons name="checkmark" size={16} color={C.green} />
         <Text style={styles.disabledBtnText}>Connected</Text>
       </View>
     );
-  } else if (isPending) {
-    // Request pending
+  } else if (status === 'pending') {
     buttonContent = (
       <TouchableOpacity style={styles.pendingBtn} onPress={handleCancelRequest} disabled={loading}>
         {loading ? (
@@ -146,7 +134,6 @@ function MentorCard({
       </TouchableOpacity>
     );
   } else {
-    // Can connect
     buttonContent = (
       <TouchableOpacity style={styles.connectBtn} onPress={handleConnect} disabled={loading}>
         {loading ? (
@@ -166,7 +153,6 @@ function MentorCard({
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
       </View>
-
       <View style={styles.cardContent}>
         <Text style={styles.name}>{name}</Text>
         {(domain || company) && (
@@ -177,11 +163,12 @@ function MentorCard({
         {commonSkills > 0 && (
           <View style={styles.skillBadge}>
             <Ionicons name="code-slash" size={10} color={C.primary} />
-            <Text style={styles.skillBadgeText}>{commonSkills} common skill{commonSkills !== 1 ? 's' : ''}</Text>
+            <Text style={styles.skillBadgeText}>
+              {commonSkills} common skill{commonSkills !== 1 ? 's' : ''}
+            </Text>
           </View>
         )}
       </View>
-
       {buttonContent}
     </View>
   );
@@ -210,74 +197,61 @@ export default function MentorsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState(TABS.SUGGESTED);
   const [suggested, setSuggested] = useState([]);
   const [connections, setConnections] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
+
+  const [statusMap, setStatusMap] = useState({});
+  // ── FIX: true while getConnectionStatus calls are in-flight ──────────────
+  const [statusLoading, setStatusLoading] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [searchStatusMap, setSearchStatusMap] = useState({});
+  const [searchStatusLoading, setSearchStatusLoading] = useState(false);
   const [searching, setSearching] = useState(false);
 
-  // ─── Load pending requests from storage ─────────────────────────────────────
-  const loadPendingRequests = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(PENDING_REQUESTS_KEY);
-      if (stored) {
-        setPendingRequests(JSON.parse(stored));
-      }
-    } catch (error) {
-      console.error('Failed to load pending requests:', error);
-    }
-  };
-
-  const savePendingRequest = async (alumniId) => {
-    const updated = [...pendingRequests, alumniId];
-    setPendingRequests(updated);
-    await AsyncStorage.setItem(PENDING_REQUESTS_KEY, JSON.stringify(updated));
-  };
-
-  const removePendingRequest = async (alumniId) => {
-    const updated = pendingRequests.filter(id => id !== alumniId);
-    setPendingRequests(updated);
-    await AsyncStorage.setItem(PENDING_REQUESTS_KEY, JSON.stringify(updated));
-  };
-
-  // ─── Check if connection exists in accepted list ───────────────────────────
-  const isConnected = (alumniId) => {
-    return connections.some(conn => (conn.alumni_id || conn.id) === alumniId);
-  };
-
-  const isPending = (alumniId) => {
-    return pendingRequests.includes(alumniId);
+  // ─── Fetch connection statuses for a list of alumni in parallel ─────────────
+  const fetchStatusMap = async (mentorList) => {
+    const entries = await Promise.all(
+      mentorList.map(async (mentor) => {
+        const id = mentor.alumni_id || mentor.id;
+        try {
+          const res = await getConnectionStatus(id);
+          return [id, res.data]; // { status, is_sender }
+        } catch {
+          // 404 = no connection; any other error also defaults to none
+          return [id, { status: 'none' }];
+        }
+      })
+    );
+    return Object.fromEntries(entries);
   };
 
   // ─── Fetch Data ────────────────────────────────────────────────────────────
   const fetchSuggested = async () => {
     const res = await getMentors();
-    setSuggested(res.data || []);
+    const mentors = res.data || [];
+    setSuggested(mentors);
+
+    // ── FIX: raise flag BEFORE parallel fetches, lower it AFTER ─────────────
+    setStatusLoading(true);
+    try {
+      const map = await fetchStatusMap(mentors);
+      setStatusMap(map);
+    } finally {
+      setStatusLoading(false);
+    }
   };
 
   const fetchConnections = async () => {
     const res = await getStudentConnections();
-    const acceptedConnections = res.data || [];
-    setConnections(acceptedConnections);
-    
-    // Clean up pending requests that are now accepted
-    const stillPending = pendingRequests.filter(pendingId => 
-      !acceptedConnections.some(conn => (conn.alumni_id || conn.id) === pendingId)
-    );
-    
-    if (stillPending.length !== pendingRequests.length) {
-      setPendingRequests(stillPending);
-      await AsyncStorage.setItem(PENDING_REQUESTS_KEY, JSON.stringify(stillPending));
-    }
+    setConnections(res.data || []);
   };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      await loadPendingRequests();
-      
       if (activeTab === TABS.SUGGESTED) {
         await fetchSuggested();
       } else {
@@ -292,14 +266,15 @@ export default function MentorsScreen({ navigation }) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadPendingRequests();
-    
-    if (activeTab === TABS.SUGGESTED) {
-      await fetchSuggested();
-    } else {
-      await fetchConnections();
+    try {
+      if (activeTab === TABS.SUGGESTED) {
+        await fetchSuggested();
+      } else {
+        await fetchConnections();
+      }
+    } finally {
+      setRefreshing(false);
     }
-    setRefreshing(false);
   };
 
   useFocusEffect(
@@ -310,24 +285,23 @@ export default function MentorsScreen({ navigation }) {
 
   // ─── Actions ───────────────────────────────────────────────────────────────
   const handleConnect = async (id) => {
-    await connectMentor(id);
-    await savePendingRequest(id);
+    await connectUser(id, { connection_type: 'mentor' });
+    // Optimistic update — no refetch needed
+    setStatusMap((prev) => ({ ...prev, [id]: { status: 'pending', is_sender: true } }));
+    setSearchStatusMap((prev) => ({ ...prev, [id]: { status: 'pending', is_sender: true } }));
     Alert.alert('Request Sent', 'Your mentor request has been sent. You will be notified when they accept.');
-    await fetchSuggested(); // Refresh to update button state
   };
 
   const handleCancelRequest = async (id) => {
-    // Note: API doesn't have a cancel endpoint yet
-    // For now, just remove from local pending storage
-    // Ideally, you'd have DELETE /student/connections/{target_id} to cancel pending
-    await removePendingRequest(id);
-    Alert.alert('Request Cancelled', 'Connection request cancelled');
+    await removeConnection(id);
+    setStatusMap((prev) => ({ ...prev, [id]: { status: 'none' } }));
+    setSearchStatusMap((prev) => ({ ...prev, [id]: { status: 'none' } }));
   };
 
   const handleDisconnect = async (id) => {
-    await removeStudentConnection(id);
+    await removeConnection(id);
     await fetchConnections();
-    await fetchSuggested(); // Refresh suggested in case they reappear
+    await fetchSuggested();
   };
 
   // ─── Search ────────────────────────────────────────────────────────────────
@@ -335,15 +309,26 @@ export default function MentorsScreen({ navigation }) {
     setSearchQuery(text);
     if (text.length < 2) {
       setSearchResults([]);
+      setSearchStatusMap({});
       return;
     }
-
     setSearching(true);
     try {
       const res = await searchAlumni({ display_name: text });
-      setSearchResults(res.data || []);
-    } catch (err) {
+      const results = res.data || [];
+      setSearchResults(results);
+
+      // ── FIX: same flag pattern for search modal ───────────────────────────
+      setSearchStatusLoading(true);
+      try {
+        const map = await fetchStatusMap(results);
+        setSearchStatusMap(map);
+      } finally {
+        setSearchStatusLoading(false);
+      }
+    } catch {
       setSearchResults([]);
+      setSearchStatusMap({});
     } finally {
       setSearching(false);
     }
@@ -352,6 +337,7 @@ export default function MentorsScreen({ navigation }) {
   const clearSearch = () => {
     setSearchQuery('');
     setSearchResults([]);
+    setSearchStatusMap({});
   };
 
   const currentData = activeTab === TABS.SUGGESTED ? suggested : connections;
@@ -429,8 +415,8 @@ export default function MentorsScreen({ navigation }) {
                 onConnect={handleConnect}
                 onDisconnect={handleDisconnect}
                 onCancelRequest={handleCancelRequest}
-                isConnected={isConnected(alumniId)}
-                isPending={isPending(alumniId)}
+                connectionStatus={statusMap[alumniId]}
+                statusLoading={activeTab === TABS.SUGGESTED && statusLoading}
               />
             );
           }}
@@ -486,8 +472,8 @@ export default function MentorsScreen({ navigation }) {
                     onConnect={handleConnect}
                     onDisconnect={handleDisconnect}
                     onCancelRequest={handleCancelRequest}
-                    isConnected={isConnected(item.id)}
-                    isPending={isPending(item.id)}
+                    connectionStatus={searchStatusMap[item.id]}
+                    statusLoading={searchStatusLoading}
                   />
                 )}
                 contentContainerStyle={styles.listContent}
@@ -515,12 +501,9 @@ export default function MentorsScreen({ navigation }) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
+  safeArea: { flex: 1, backgroundColor: C.bg },
   header: {
-    paddingTop:30,
+    paddingTop: 30,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -530,41 +513,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
-  headerBtn: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: C.text,
-  },
+  headerBtn: { padding: 8 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: C.text },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: C.card,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  tabActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: C.primary,
-  },
-  tabText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: C.muted,
-  },
-  tabTextActive: {
-    color: C.primary,
-    fontWeight: '600',
-  },
-  listContent: {
-    padding: 16,
-  },
+  tab: { flex: 1, paddingVertical: 14, alignItems: 'center' },
+  tabActive: { borderBottomWidth: 2, borderBottomColor: C.primary },
+  tabText: { fontSize: 15, fontWeight: '500', color: C.muted },
+  tabTextActive: { color: C.primary, fontWeight: '600' },
+  listContent: { padding: 16 },
   card: {
     flexDirection: 'row',
     backgroundColor: C.card,
@@ -583,25 +544,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 14,
   },
-  avatarText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: C.primary,
-  },
-  cardContent: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: C.text,
-    marginBottom: 2,
-  },
-  details: {
-    fontSize: 13,
-    color: C.subtext,
-    marginBottom: 4,
-  },
+  avatarText: { fontSize: 20, fontWeight: '700', color: C.primary },
+  cardContent: { flex: 1 },
+  name: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 2 },
+  details: { fontSize: 13, color: C.subtext, marginBottom: 4 },
   skillBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -612,11 +558,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignSelf: 'flex-start',
   },
-  skillBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: C.primary,
-  },
+  skillBadgeText: { fontSize: 10, fontWeight: '600', color: C.primary },
   connectBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -627,11 +569,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  connectBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.primary,
-  },
+  connectBtnText: { fontSize: 12, fontWeight: '600', color: C.primary },
   pendingBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -643,11 +581,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  pendingBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.amber,
-  },
+  pendingBtnText: { fontSize: 12, fontWeight: '600', color: C.amber },
   disabledBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -657,11 +591,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  disabledBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.green,
-  },
+  disabledBtnText: { fontSize: 12, fontWeight: '600', color: C.green },
   removeBtn: {
     width: 36,
     height: 36,
@@ -670,14 +600,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  separator: {
-    height: 12,
-  },
-  center: {
-    flex: 1,
+  // ── NEW ──
+  statusLoadingWrap: {
+    width: 36,
+    height: 36,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  separator: { height: 12 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -693,18 +624,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: C.text,
-    marginBottom: 8,
-  },
-  emptyMessage: {
-    fontSize: 14,
-    color: C.muted,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: C.text, marginBottom: 8 },
+  emptyMessage: { fontSize: 14, color: C.muted, textAlign: 'center', marginBottom: 20 },
   emptyBtn: {
     borderWidth: 1.5,
     borderColor: C.primary,
@@ -712,15 +633,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 10,
   },
-  emptyBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: C.primary,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
+  emptyBtnText: { fontSize: 14, fontWeight: '600', color: C.primary },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   modalContent: {
     flex: 1,
     backgroundColor: C.card,
@@ -737,11 +651,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: C.text,
-  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: C.text },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',

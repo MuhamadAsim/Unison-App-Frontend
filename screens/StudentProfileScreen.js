@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,10 +15,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { AuthContext } from '../context/AuthContext';
 import { addStudentSkill, getStudentProfile, updateStudentProfile } from '../services/api';
+
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -114,45 +117,140 @@ function InputField({ label, value, onChangeText, placeholder, multiline, keyboa
 }
 
 // ─── Edit Profile Modal ───────────────────────────────────────────────────────
+// Replace your existing EditProfileModal with this one.
+// Only changes from the original:
+//   1. Added `semester` state
+//   2. Syncs semester from profile on open
+//   3. Appends semester to FormData
+//   4. Renders a semester selector (1–8) between Phone and Bio
+
 function EditProfileModal({ visible, profile, onClose, onSaved }) {
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
   const [bio, setBio] = useState('');
+  const [semester, setSemester] = useState('');
+  const [profilePicture, setProfilePicture] = useState(null); // { uri, type, name }
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Re-sync fields every time the modal opens or fresh profile data arrives
   useEffect(() => {
     if (visible) {
       setDisplayName(profile?.display_name || '');
       setPhone(profile?.phone || '');
       setBio(profile?.bio || '');
+      setSemester(profile?.semester ? String(profile.semester) : '');
+      setProfilePicture(null); // Reset selected image when modal opens
     }
   }, [visible, profile]);
+
+  // Request permissions and pick image
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant camera roll permissions to change profile picture');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        base64: false,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+
+        // Generate a unique filename
+        const fileExt = asset.uri.split('.').pop();
+        const fileName = `profile_${Date.now()}.${fileExt}`;
+
+        setProfilePicture({
+          uri: asset.uri,
+          type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+          name: fileName,
+        });
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  // Take photo with camera
+  const takePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant camera permissions to take a photo');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        const fileExt = asset.uri.split('.').pop();
+        const fileName = `profile_${Date.now()}.${fileExt}`;
+
+        setProfilePicture({
+          uri: asset.uri,
+          type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+          name: fileName,
+        });
+      }
+    } catch (error) {
+      console.error('Camera error:', error);
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const showImagePickerOptions = () => {
+    Alert.alert(
+      'Update Profile Picture',
+      'Choose an option',
+      [
+        { text: 'Take Photo', onPress: takePhoto },
+        { text: 'Choose from Library', onPress: pickImage },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true }
+    );
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
 
-      // API requires multipart/form-data (it also accepts profile_picture)
       const formData = new FormData();
       formData.append('display_name', displayName.trim());
       formData.append('phone', phone.trim());
       formData.append('bio', bio.trim());
+      if (semester) formData.append('semester', Number(semester));
 
-      console.log('📤 Updating profile with:', {
-        display_name: displayName.trim(),
-        phone: phone.trim(),
-        bio: bio.trim(),
-      });
+      // Append profile picture if selected
+      if (profilePicture) {
+        // @ts-ignore - React Native FormData expects this format
+        formData.append('profile_picture', {
+          uri: profilePicture.uri,
+          type: profilePicture.type,
+          name: profilePicture.name,
+        });
+      }
 
       await updateStudentProfile(formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      console.log('✅ Profile updated successfully');
       await onSaved();
       onClose();
     } catch (err) {
-      console.log('❌ Update error:', err?.response?.data);
       Alert.alert('Error', err.response?.data?.message || 'Failed to update profile');
     } finally {
       setSaving(false);
@@ -166,10 +264,7 @@ function EditProfileModal({ visible, profile, onClose, onSaved }) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={s.modalSheet}>
-          {/* Handle */}
           <View style={s.modalHandle} />
-
-          {/* Header */}
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>Edit Profile</Text>
             <TouchableOpacity onPress={onClose} style={s.modalCloseBtn}>
@@ -178,12 +273,47 @@ function EditProfileModal({ visible, profile, onClose, onSaved }) {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} style={{ paddingHorizontal: 20 }}>
+
+            {/* ── Profile Picture Section ─────────────────────────────────── */}
+            <View style={editStyles.profilePicSection}>
+              <Text style={[s.inputLabel, { marginBottom: 8, textAlign: 'center' }]}>Profile Picture</Text>
+              <TouchableOpacity onPress={showImagePickerOptions} activeOpacity={0.8}>
+                <View style={editStyles.profilePicContainer}>
+                  {profilePicture ? (
+                    <Image
+                      source={{ uri: profilePicture.uri }}
+                      style={editStyles.profilePicPreview}
+                    />
+                  ) : profile?.profile_picture ? (
+                    <Image
+                      source={{ uri: profile.profile_picture }}
+                      style={editStyles.profilePicPreview}
+                    />
+                  ) : (
+                    <View style={editStyles.profilePicPlaceholder}>
+                      <Ionicons name="camera" size={32} color={C.muted} />
+                      <Text style={editStyles.profilePicPlaceholderText}>Add Photo</Text>
+                    </View>
+                  )}
+
+                  {/* Edit badge */}
+                  <View style={editStyles.editIconBadge}>
+                    <Ionicons name="pencil" size={14} color="#fff" />
+                  </View>
+                </View>
+              </TouchableOpacity>
+              <Text style={editStyles.profilePicHint}>
+                Tap to change profile picture
+              </Text>
+            </View>
+
             <InputField
               label="Display Name"
               value={displayName}
               onChangeText={setDisplayName}
               placeholder="Your full name"
             />
+
             <InputField
               label="Phone Number"
               value={phone}
@@ -191,6 +321,30 @@ function EditProfileModal({ visible, profile, onClose, onSaved }) {
               placeholder="+92 300 0000000"
               keyboardType="phone-pad"
             />
+
+            {/* Semester Selector */}
+            <Text style={[s.inputLabel, { marginBottom: 8 }]}>Current Semester</Text>
+            <View style={semStyles.semesterGrid}>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((num) => {
+                const selected = semester === String(num);
+                return (
+                  <TouchableOpacity
+                    key={num}
+                    style={[semStyles.semBox, selected && semStyles.semBoxSelected]}
+                    onPress={() => setSemester(String(num))}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[semStyles.semNum, selected && semStyles.semNumSelected]}>
+                      {num}
+                    </Text>
+                    <Text style={[semStyles.semLabel, selected && semStyles.semLabelSelected]}>
+                      Sem
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <InputField
               label="Bio"
               value={bio}
@@ -199,11 +353,11 @@ function EditProfileModal({ visible, profile, onClose, onSaved }) {
               multiline
             />
 
-            {/* Read-only info notice */}
+            {/* Read-only notice */}
             <View style={s.infoNotice}>
               <Ionicons name="information-circle-outline" size={15} color={C.primary} />
               <Text style={s.infoNoticeText}>
-                Roll number, degree, semester and email are managed by the university and cannot be changed here.
+                Roll number, degree and email are managed by the university and cannot be changed here.
               </Text>
             </View>
 
@@ -224,6 +378,49 @@ function EditProfileModal({ visible, profile, onClose, onSaved }) {
     </Modal>
   );
 }
+
+// ─── Semester grid styles (scoped so they don't pollute the main StyleSheet) ──
+const semStyles = StyleSheet.create({
+  semesterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  semBox: {
+    width: '22%',          // 4 per row with gap
+    aspectRatio: 1,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: C.bg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  semBoxSelected: {
+    borderColor: C.primary,
+    backgroundColor: C.primarySoft,
+  },
+  semNum: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: C.muted,
+  },
+  semNumSelected: {
+    color: C.primary,
+  },
+  semLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: C.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 1,
+  },
+  semLabelSelected: {
+    color: C.primary,
+  },
+});
 
 // ─── Add Skill Modal ──────────────────────────────────────────────────────────
 function AddSkillModal({ visible, onClose, onSaved }) {
@@ -367,7 +564,7 @@ function SkillCard({ skill, index }) {
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function StudentProfileScreen({ navigation }) {
-  const { userData } = useContext(AuthContext);
+  const { userData, logout } = useContext(AuthContext);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editVisible, setEditVisible] = useState(false);
@@ -452,10 +649,18 @@ export default function StudentProfileScreen({ navigation }) {
           <View style={s.heroBlobB} />
 
           {/* Avatar */}
+          {/* Avatar */}
           <View style={s.avatarRing}>
-            <View style={s.avatar}>
-              <Text style={s.avatarText}>{initials(displayName)}</Text>
-            </View>
+            {profile?.profile_picture ? (
+              <Image
+                source={{ uri: profile.profile_picture }}
+                style={s.avatarImage}
+              />
+            ) : (
+              <View style={s.avatar}>
+                <Text style={s.avatarText}>{initials(displayName)}</Text>
+              </View>
+            )}
           </View>
 
           {/* Name & Email */}
@@ -518,7 +723,7 @@ export default function StudentProfileScreen({ navigation }) {
           <View style={s.statsDivider} />
           <StatBox
             value={profile.roll_number ? profile.roll_number.split('-').pop() : '—'}
-            label="Roll No."
+            label="Registration No."
             icon="id-card-outline"
           />
         </View>
@@ -632,6 +837,18 @@ export default function StudentProfileScreen({ navigation }) {
             <Text style={s.mentorBannerSub}>Connect with alumni working in your field</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={C.primary} />
+        </TouchableOpacity>
+
+        {/* ════════════════════════════════════════════════════════════
+    LOGOUT
+════════════════════════════════════════════════════════════ */}
+        <TouchableOpacity
+          style={s.logoutBtn}
+          onPress={logout}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="log-out-outline" size={18} color={C.coral} />
+          <Text style={s.logoutBtnText}>Log Out</Text>
         </TouchableOpacity>
 
       </Animated.ScrollView>
@@ -986,6 +1203,17 @@ const s = StyleSheet.create({
   },
   primaryBtnDisabled: { opacity: 0.6 },
   primaryBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  logoutBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 16, marginTop: 16,
+    backgroundColor: C.coralSoft,
+    borderRadius: 16, borderWidth: 1, borderColor: '#FECACA',
+    paddingVertical: 14,
+  },
+  logoutBtnText: {
+    fontSize: 14, fontWeight: '600', color: C.coral,
+  },
 
   // ── Info Notice
   infoNotice: {
@@ -996,4 +1224,64 @@ const s = StyleSheet.create({
     marginBottom: 20, alignItems: 'flex-start',
   },
   infoNoticeText: { flex: 1, fontSize: 12, color: C.primary, lineHeight: 18 },
+
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+});
+
+
+const editStyles = StyleSheet.create({
+  profilePicSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  profilePicContainer: {
+    position: 'relative',
+    marginBottom: 8,
+  },
+  profilePicPreview: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
+    borderColor: C.primary,
+  },
+  profilePicPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: C.primarySoft,
+    borderWidth: 2,
+    borderColor: C.primaryBorder,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profilePicPlaceholderText: {
+    fontSize: 11,
+    color: C.primary,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  editIconBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: C.primary,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  profilePicHint: {
+    fontSize: 11,
+    color: C.muted,
+    marginTop: 4,
+  },
 });
