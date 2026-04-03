@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { postOpportunity, getAllSkills } from '../services/api';
+import { updateOpportunity, getAllSkills } from '../services/api';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const scale = (size) => (SCREEN_WIDTH / 375) * size;
@@ -18,14 +18,25 @@ const C = {
   border: '#E5E7EB', divider: '#F3F4F6', coral: '#DC2626'
 };
 
-export default function PostOpportunityScreen({ navigation }) {
+export default function EditOpportunityScreen({ route, navigation }) {
+  const opp = route.params?.opportunity;
+  if (!opp) return <View style={s.container} />;
+
   const [formData, setFormData] = useState({
-    title: '', type: 'job', company_name: '', location: '',
-    is_remote: false, description: '', requirements: '',
-    deadline: '', apply_link: '', required_skills: []
+    title: opp.title || '',
+    type: opp.type || 'job',
+    company_name: opp.company_name || '',
+    location: opp.location || '',
+    is_remote: opp.is_remote || false,
+    description: opp.description || '',
+    requirements: opp.requirements || '',
+    deadline: opp.deadline ? new Date(opp.deadline).toISOString().split('T')[0] : '',
+    apply_link: opp.apply_link || '',
+    required_skills: opp.required_skills?.map(s => s.id || s) || []
   });
 
-  const [media, setMedia] = useState([]);
+  const [existingMedia, setExistingMedia] = useState(opp.media || []);
+  const [newMedia, setNewMedia] = useState([]);
   const [allSkills, setAllSkills] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -36,8 +47,9 @@ export default function PostOpportunityScreen({ navigation }) {
   }, []);
 
   const pickMedia = async () => {
-    if (media.length >= 5) {
-      return Alert.alert('Limit Reached', 'You can only upload up to 5 media files.');
+    const totalMedia = existingMedia.length + newMedia.length;
+    if (totalMedia >= 5) {
+      return Alert.alert('Limit Reached', 'You can only attach up to 5 media files.');
     }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return Alert.alert('Permission needed');
@@ -46,16 +58,19 @@ export default function PostOpportunityScreen({ navigation }) {
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       allowsMultipleSelection: true,
       quality: 0.7,
-      selectionLimit: 5 - media.length
+      selectionLimit: 5 - totalMedia
     });
 
     if (!result.canceled && result.assets) {
-      setMedia(prev => [...prev, ...result.assets].slice(0, 5));
+      setNewMedia(prev => [...prev, ...result.assets].slice(0, 5 - existingMedia.length));
     }
   };
 
-  const removeMedia = (index) => {
-    setMedia(prev => prev.filter((_, i) => i !== index));
+  const removeExistingMedia = (index) => {
+    setExistingMedia(prev => prev.filter((_, i) => i !== index));
+  };
+  const removeNewMedia = (index) => {
+    setNewMedia(prev => prev.filter((_, i) => i !== index));
   };
 
   const toggleSkill = (skillId) => {
@@ -76,16 +91,22 @@ export default function PostOpportunityScreen({ navigation }) {
       setSubmitting(true);
       const payload = new FormData();
       Object.keys(formData).forEach(key => {
-        if (key === 'required_skills') {
+         if (key === 'required_skills') {
           payload.append(key, JSON.stringify(formData[key]));
         } else if (key === 'is_remote') {
           payload.append(key, formData[key] ? 'true' : 'false');
         } else {
-          payload.append(key, formData[key]);
+          payload.append(key, formData[key] || '');
         }
       });
 
-      media.forEach((m, idx) => {
+      // Pass existing media URLs
+      if (existingMedia.length > 0) {
+        payload.append('existing_media', JSON.stringify(existingMedia));
+      }
+
+      // Add new ones
+      newMedia.forEach((m, idx) => {
         payload.append('media', {
           uri: m.uri,
           name: m.fileName || `media_${idx}.jpg`,
@@ -93,10 +114,10 @@ export default function PostOpportunityScreen({ navigation }) {
         });
       });
 
-      await postOpportunity(payload);
-      Alert.alert('Success', 'Opportunity posted!', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+      await updateOpportunity(opp.id, payload);
+      Alert.alert('Success', 'Opportunity updated!', [{ text: 'OK', onPress: () => navigation.goBack() }]);
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.message || 'Could not post opportunity.');
+      Alert.alert('Error', err.response?.data?.message || 'Could not update opportunity.');
     } finally {
       setSubmitting(false);
     }
@@ -105,14 +126,13 @@ export default function PostOpportunityScreen({ navigation }) {
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <Text style={s.label}>Title *</Text>
-      <TextInput style={s.input} value={formData.title} onChangeText={t => setFormData(p => ({...p, title: t}))} placeholder="Software Engineer" />
+      <TextInput style={s.input} value={formData.title} onChangeText={t => setFormData(p => ({...p, title: t}))} />
 
       <Text style={s.label}>Type *</Text>
       <View style={s.typeChips}>
         {['job', 'internship', 'freelance'].map(t => (
           <TouchableOpacity 
-            key={t}
-            style={[s.typeChip, formData.type === t && s.typeChipActive]}
+            key={t} style={[s.typeChip, formData.type === t && s.typeChipActive]}
             onPress={() => setFormData(p => ({...p, type: t}))}
           >
             <Text style={[s.typeText, formData.type === t && s.typeTextActive]}>
@@ -123,10 +143,10 @@ export default function PostOpportunityScreen({ navigation }) {
       </View>
 
       <Text style={s.label}>Company Name *</Text>
-      <TextInput style={s.input} value={formData.company_name} onChangeText={t => setFormData(p => ({...p, company_name: t}))} placeholder="Acme Corp" />
+      <TextInput style={s.input} value={formData.company_name} onChangeText={t => setFormData(p => ({...p, company_name: t}))} />
 
       <Text style={s.label}>Location</Text>
-      <TextInput style={s.input} value={formData.location} onChangeText={t => setFormData(p => ({...p, location: t}))} placeholder="New York, NY" />
+      <TextInput style={s.input} value={formData.location} onChangeText={t => setFormData(p => ({...p, location: t}))} />
 
       <View style={s.switchRow}>
         <Text style={s.label}>Fully Remote</Text>
@@ -138,16 +158,16 @@ export default function PostOpportunityScreen({ navigation }) {
       </View>
 
       <Text style={s.label}>Description *</Text>
-      <TextInput style={[s.input, s.textArea]} multiline value={formData.description} onChangeText={t => setFormData(p => ({...p, description: t}))} placeholder="Describe the role..." />
+      <TextInput style={[s.input, s.textArea]} multiline value={formData.description} onChangeText={t => setFormData(p => ({...p, description: t}))} />
 
       <Text style={s.label}>Requirements</Text>
-      <TextInput style={[s.input, s.textArea]} multiline value={formData.requirements} onChangeText={t => setFormData(p => ({...p, requirements: t}))} placeholder="e.g. 5+ years of React..." />
+      <TextInput style={[s.input, s.textArea]} multiline value={formData.requirements} onChangeText={t => setFormData(p => ({...p, requirements: t}))} />
 
       <Text style={s.label}>Deadline (YYYY-MM-DD)</Text>
-      <TextInput style={s.input} value={formData.deadline} onChangeText={t => setFormData(p => ({...p, deadline: t}))} placeholder="2026-12-31" />
+      <TextInput style={s.input} value={formData.deadline} onChangeText={t => setFormData(p => ({...p, deadline: t}))} />
 
       <Text style={s.label}>Apply Link (URL)</Text>
-      <TextInput style={s.input} value={formData.apply_link} onChangeText={t => setFormData(p => ({...p, apply_link: t}))} placeholder="https://company.com/apply" autoCapitalize="none" />
+      <TextInput style={s.input} value={formData.apply_link} onChangeText={t => setFormData(p => ({...p, apply_link: t}))} autoCapitalize="none" />
 
       <Text style={s.label}>Required Skills ({formData.required_skills.length})</Text>
       <View style={s.skillsGrid}>
@@ -162,16 +182,26 @@ export default function PostOpportunityScreen({ navigation }) {
         })}
       </View>
 
-      <Text style={s.label}>Media ({media.length}/5)</Text>
+      <Text style={s.label}>Media ({existingMedia.length + newMedia.length}/5)</Text>
       <ScrollView horizontal style={s.mediaScroll}>
         <TouchableOpacity style={s.addMediaBtn} onPress={pickMedia}>
           <Ionicons name="images-outline" size={32} color={C.primary} />
           <Text style={s.addMediaText}>Add</Text>
         </TouchableOpacity>
-        {media.map((m, idx) => (
-          <View key={idx} style={s.mediaThumbWrap}>
+
+        {existingMedia.map((m, idx) => (
+          <View key={`old_${idx}`} style={s.mediaThumbWrap}>
+            <Image source={{ uri: m.url || m }} style={s.mediaThumb} />
+            <TouchableOpacity style={s.removeMediaBtn} onPress={() => removeExistingMedia(idx)}>
+              <Ionicons name="close" size={16} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        ))}
+
+        {newMedia.map((m, idx) => (
+          <View key={`new_${idx}`} style={s.mediaThumbWrap}>
             <Image source={{ uri: m.uri }} style={s.mediaThumb} />
-            <TouchableOpacity style={s.removeMediaBtn} onPress={() => removeMedia(idx)}>
+            <TouchableOpacity style={s.removeMediaBtn} onPress={() => removeNewMedia(idx)}>
               <Ionicons name="close" size={16} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -179,7 +209,7 @@ export default function PostOpportunityScreen({ navigation }) {
       </ScrollView>
 
       <TouchableOpacity style={s.submitBtn} onPress={handleSave} disabled={submitting}>
-        {submitting ? <ActivityIndicator color="#FFF" /> : <Text style={s.submitText}>Post Opportunity</Text>}
+        {submitting ? <ActivityIndicator color="#FFF" /> : <Text style={s.submitText}>Update Opportunity</Text>}
       </TouchableOpacity>
       <View style={{ height: 40 }} />
     </ScrollView>

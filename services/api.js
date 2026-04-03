@@ -87,4 +87,7 @@ export const getBatchAnalysis = () => api.get(`/network/batch-analysis`);       
 export const getNotifications = () => api.get(`/notifications`);                   // GET   /notifications
 export const markNotificationRead = (id) => api.patch(`/notifications/${id}/read`);     // PATCH /notifications/:id/read
 
+// ─── PROFILES MODULE ────────────────────────────────────────────────────────────
+export const getPublicProfile = (id) => api.get(`/profiles/user/${id}`);          // GET   /profiles/user/:id
+
 export default api;
