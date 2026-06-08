@@ -39,12 +39,13 @@ import {
   unfollowUser,
 } from '../../services/api';
 
+// ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
   primary: '#4F46E5',
   primaryDark: '#3730A3',
   primarySoft: '#EEF2FF',
   primaryBorder: '#C7D2FE',
-  bg: '#F8F8FC',
+  bg: '#F5F6FA',
   card: '#FFFFFF',
   text: '#0F0F23',
   subtext: '#4B5563',
@@ -96,7 +97,6 @@ const REQUEST_SUB_FILTERS = {
   OUTGOING: 'outgoing',
 };
 
-// ── [NEW] Sub-tabs for My Network tab ────────────────────────────────────────
 const NETWORK_SUB_TABS = {
   CONNECTIONS: 'connections',
   FOLLOWERS: 'followers',
@@ -113,8 +113,7 @@ function extractFields(user) {
   const bio = user.bio || '';
   const skills = Array.isArray(user.skills) ? user.skills : [];
   const company = user.company || user.current_company || '';
-  const jobRole = user.role && !['alumni', 'student', 'admin'].includes(user.role?.toLowerCase())
-    ? user.role : '';
+  const jobRole = user.role && !['alumni', 'student', 'admin'].includes(user.role?.toLowerCase()) ? user.role : '';
   const role = user.role || user.sender_role || user.target_role;
   return { id, name, username, picture, degree, batch, bio, skills, company, jobRole, role };
 }
@@ -146,68 +145,27 @@ function Avatar({ picture, name, size = 52 }) {
   );
 }
 
-// ─── Request Card ─────────────────────────────────────────────────────────────
-function RequestCard({ request, type, onAccept, onReject, onCancel }) {
-  const [loading, setLoading] = useState(false);
-  const { id, name, username, picture, degree, role } = extractFields(request);
-  const isIncoming = type === 'incoming';
-
-  const handleAccept = async () => { setLoading(true); try { await onAccept(id); } catch (err) { Alert.alert('Error', err.message); } finally { setLoading(false); } };
-  const handleReject = async () => { setLoading(true); try { await onReject(id); } catch (err) { Alert.alert('Error', err.message); } finally { setLoading(false); } };
-  const handleCancel = async () => { setLoading(true); try { await onCancel(id); } catch (err) { Alert.alert('Error', err.message); } finally { setLoading(false); } };
-
+// ─── Role Badge ───────────────────────────────────────────────────────────────
+function RoleBadge({ role }) {
+  if (!role) return null;
+  const isAlumni = role === 'alumni';
   return (
-    <View style={styles.card}>
-      <Avatar picture={picture} name={name} size={50} />
-      <View style={styles.cardBody}>
-        <View style={styles.cardTopRow}>
-          <Text style={styles.cardName} numberOfLines={1}>{name}</Text>
-          {isIncoming ? (
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity style={styles.acceptPill} onPress={handleAccept} disabled={loading}>
-                {loading ? <ActivityIndicator size="small" color={C.green} /> : <Text style={styles.acceptPillText}>Accept</Text>}
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.rejectPill} onPress={handleReject} disabled={loading}>
-                {loading ? <ActivityIndicator size="small" color={C.coral} /> : <Text style={styles.rejectPillText}>Reject</Text>}
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.pendingPill} onPress={handleCancel} disabled={loading}>
-              {loading ? <ActivityIndicator size="small" color={C.amber} /> : <><Ionicons name="close-outline" size={13} color={C.amber} /><Text style={styles.pendingPillText}>Cancel</Text></>}
-            </TouchableOpacity>
-          )}
-        </View>
-        {username ? <Text style={styles.cardUsername}>@{username}</Text> : null}
-        {role && (
-          <View style={[styles.roleBadge, role === 'alumni' ? styles.roleBadgeAlumni : styles.roleBadgeStudent]}>
-            <Text style={styles.roleBadgeText}>{role === 'alumni' ? 'Alumni' : 'Student'}</Text>
-          </View>
-        )}
-        {degree ? <Text style={styles.cardSub}>{degree}</Text> : null}
-      </View>
+    <View style={[styles.roleBadge, isAlumni ? styles.roleBadgeAlumni : styles.roleBadgeStudent]}>
+      <Text style={[styles.roleBadgeText, isAlumni ? styles.roleBadgeAlumniText : styles.roleBadgeStudentText]}>
+        {isAlumni ? 'Alumni' : 'Student'}
+      </Text>
     </View>
   );
 }
 
-// ─── [NEW] Options Menu helper ────────────────────────────────────────────────
-// Opens native ActionSheet on iOS, Alert with buttons on Android.
-// Options: Follow/Unfollow, Block.
+// ─── Options Menu ─────────────────────────────────────────────────────────────
 function showOptionsMenu({ name, isFollowing, isBlocked, onFollow, onBlock }) {
-  const followLabel  = isFollowing ? 'Unfollow' : 'Follow';
-  const blockLabel   = isBlocked   ? 'Unblock'  : 'Block User';
-
+  const followLabel = isFollowing ? 'Unfollow' : 'Follow';
+  const blockLabel = isBlocked ? 'Unblock' : 'Block User';
   if (Platform.OS === 'ios') {
     ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: name,
-        options: [followLabel, blockLabel, 'Cancel'],
-        destructiveButtonIndex: 1,
-        cancelButtonIndex: 2,
-      },
-      (idx) => {
-        if (idx === 0) onFollow();
-        if (idx === 1) onBlock();
-      },
+      { title: name, options: [followLabel, blockLabel, 'Cancel'], destructiveButtonIndex: 1, cancelButtonIndex: 2 },
+      (idx) => { if (idx === 0) onFollow(); if (idx === 1) onBlock(); },
     );
   } else {
     Alert.alert(name, undefined, [
@@ -218,26 +176,110 @@ function showOptionsMenu({ name, isFollowing, isBlocked, onFollow, onBlock }) {
   }
 }
 
+// ─── Request Card ─────────────────────────────────────────────────────────────
+function RequestCard({ request, type, onAccept, onReject, onCancel }) {
+  // Optimistic: track local action state to prevent double taps
+  const [actionState, setActionState] = useState('idle'); // idle | accepting | rejecting | cancelling | done
+  const { id, name, username, picture, degree, role } = extractFields(request);
+  const isIncoming = type === 'incoming';
+
+  const handleAccept = async () => {
+    if (actionState !== 'idle') return;
+    setActionState('accepting');
+    try { await onAccept(id); setActionState('done'); }
+    catch (err) { Alert.alert('Error', err.message); setActionState('idle'); }
+  };
+
+  const handleReject = async () => {
+    if (actionState !== 'idle') return;
+    setActionState('rejecting');
+    try { await onReject(id); setActionState('done'); }
+    catch (err) { Alert.alert('Error', err.message); setActionState('idle'); }
+  };
+
+  const handleCancel = async () => {
+    if (actionState !== 'idle') return;
+    setActionState('cancelling');
+    try { await onCancel(id); setActionState('done'); }
+    catch (err) { Alert.alert('Error', err.message); setActionState('idle'); }
+  };
+
+  if (actionState === 'done') return null;
+
+  return (
+    <View style={styles.requestCard}>
+      <Avatar picture={picture} name={name} size={46} />
+      <View style={styles.requestCardBody}>
+        <View style={styles.requestCardTop}>
+          <View style={styles.requestCardMeta}>
+            <Text style={styles.requestCardName} numberOfLines={1}>{name}</Text>
+            {username ? <Text style={styles.requestCardUsername}>@{username}</Text> : null}
+          </View>
+          <View style={styles.requestCardActions}>
+            {isIncoming ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.actionPill, styles.actionPillAccept]}
+                  onPress={handleAccept}
+                  disabled={actionState !== 'idle'}
+                  activeOpacity={0.75}
+                >
+                  {actionState === 'accepting'
+                    ? <ActivityIndicator size="small" color={C.green} />
+                    : <><Ionicons name="checkmark" size={13} color={C.green} /><Text style={styles.actionPillAcceptText}>Accept</Text></>
+                  }
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionPill, styles.actionPillReject]}
+                  onPress={handleReject}
+                  disabled={actionState !== 'idle'}
+                  activeOpacity={0.75}
+                >
+                  {actionState === 'rejecting'
+                    ? <ActivityIndicator size="small" color={C.coral} />
+                    : <Ionicons name="close" size={14} color={C.coral} />
+                  }
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.actionPill, styles.actionPillCancel]}
+                onPress={handleCancel}
+                disabled={actionState !== 'idle'}
+                activeOpacity={0.75}
+              >
+                {actionState === 'cancelling'
+                  ? <ActivityIndicator size="small" color={C.amber} />
+                  : <><Ionicons name="time-outline" size={13} color={C.amber} /><Text style={styles.actionPillCancelText}>Pending · Cancel</Text></>
+                }
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+        <View style={styles.requestCardFooter}>
+          <RoleBadge role={role} />
+          {degree ? <Text style={styles.requestCardSub} numberOfLines={1}>{degree}</Text> : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 // ─── Mentor Card ──────────────────────────────────────────────────────────────
-function MentorCard({
-  user,
-  tabType,
-  navigation,
-  onConnect,
-  onDisconnect,
-  onCancelRequest,
-  connectionStatus,
-  statusLoading,
-  // [NEW] follow & block props
-  isFollowing,
-  isBlocked,
-  onFollowToggle,
-  onBlockToggle,
-}) {
-  const [connectLoading, setConnectLoading] = useState(false);
-  const [followLoading, setFollowLoading] = useState(false);
+function MentorCard({ user, tabType, navigation, onConnect, onDisconnect, onCancelRequest, connectionStatus, statusLoading, isFollowing, isBlocked, onFollowToggle, onBlockToggle }) {
+  // Optimistic local state for connection + follow
+  const [localConnStatus, setLocalConnStatus] = useState(null);
+  const [localFollowing, setLocalFollowing] = useState(isFollowing);
+  const [connectBusy, setConnectBusy] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+
+  // Sync external follow state in
+  useEffect(() => { setLocalFollowing(isFollowing); }, [isFollowing]);
+
   const { id, name, username, picture, degree, batch, bio, skills, company, jobRole, role } = extractFields(user);
-  const status = connectionStatus?.status;
+
+  // Use local override if set, else fall back to prop
+  const status = localConnStatus ?? connectionStatus?.status;
 
   const subLine = (() => {
     if (jobRole || company) return [jobRole, company].filter(Boolean).join(' @ ');
@@ -245,197 +287,205 @@ function MentorCard({
     return bio;
   })();
 
-  const showDegreeChips = tabType === TABS.DISCOVER && (degree || batch);
   const visibleSkills = skills.slice(0, 2);
   const overflow = skills.length > 2 ? skills.length - 2 : 0;
-  const hasChips = showDegreeChips || visibleSkills.length > 0;
 
+  // ── Connect action (optimistic) ───────────────────────────────────────────
   const handleConnect = async () => {
-    if (connectLoading) return;
-    setConnectLoading(true);
-    try { await onConnect(id); }
-    catch (err) { Alert.alert('Error', err.response?.data?.message || 'Failed to send request'); }
-    finally { setConnectLoading(false); }
+    if (connectBusy) return;
+    setConnectBusy(true);
+    setLocalConnStatus('pending'); // instant optimistic flip
+    try {
+      await onConnect(id);
+    } catch (err) {
+      setLocalConnStatus(null); // revert on error
+      Alert.alert('Error', err.response?.data?.message || 'Failed to send request');
+    } finally {
+      setConnectBusy(false);
+    }
   };
 
-  const handleCancelRequest = () =>
+  const handleCancelRequest = () => {
     Alert.alert('Cancel Request', `Cancel connection request to ${name}?`, [
       { text: 'No', style: 'cancel' },
-      { text: 'Yes', style: 'destructive', onPress: () => onCancelRequest?.(id) },
+      {
+        text: 'Yes', style: 'destructive', onPress: async () => {
+          setLocalConnStatus('none');
+          try { await onCancelRequest?.(id); }
+          catch { setLocalConnStatus('pending'); }
+        },
+      },
     ]);
+  };
 
-  const handleDisconnect = () =>
+  const handleDisconnect = () => {
     Alert.alert('Remove Connection', `Remove ${name} from your connections?`, [
       { text: 'Keep', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => onDisconnect(id) },
     ]);
-
-  // [NEW] Follow toggle handler
-  const handleFollowToggle = async () => {
-    if (followLoading) return;
-    setFollowLoading(true);
-    try { await onFollowToggle?.(id, isFollowing); }
-    catch (err) { Alert.alert('Error', err.response?.data?.message || 'Action failed'); }
-    finally { setFollowLoading(false); }
   };
 
-  // [NEW] Options menu (⋯ button)
+  // ── Follow (optimistic) ───────────────────────────────────────────────────
+  const handleFollowToggle = async () => {
+    if (followBusy) return;
+    setFollowBusy(true);
+    const next = !localFollowing;
+    setLocalFollowing(next); // instant flip
+    try {
+      await onFollowToggle?.(id, !next);
+    } catch (err) {
+      setLocalFollowing(!next); // revert
+      Alert.alert('Error', err.response?.data?.message || 'Action failed');
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+
   const handleOptions = () => {
     showOptionsMenu({
       name,
-      isFollowing: !!isFollowing,
+      isFollowing: localFollowing,
       isBlocked: !!isBlocked,
       onFollow: handleFollowToggle,
       onBlock: () => onBlockToggle?.(id, isBlocked, name),
     });
   };
 
-  // ── Connect action pill ──────────────────────────────────────────────────
-  let connectAction = null;
+  // ── Connect pill rendering ────────────────────────────────────────────────
+  let connectPill = null;
   if (tabType === TABS.MY_CONNECTIONS) {
-    connectAction = (
-      <TouchableOpacity style={styles.mcPillRemove} onPress={handleDisconnect} activeOpacity={0.75}>
-        <Ionicons name="person-remove-outline" size={13} color={C.coral} />
-        <Text style={styles.mcPillRemoveText}>Remove</Text>
+    connectPill = (
+      <TouchableOpacity style={[styles.connectPill, styles.connectPillRemove]} onPress={handleDisconnect} activeOpacity={0.75}>
+        <Ionicons name="person-remove-outline" size={12} color={C.coral} />
+        <Text style={styles.connectPillRemoveText}>Remove</Text>
       </TouchableOpacity>
     );
   } else if (tabType === TABS.DISCOVER) {
-    if (statusLoading) {
-      connectAction = <View style={styles.mcPillPlaceholder}><ActivityIndicator size="small" color={C.muted} /></View>;
+    if (statusLoading && !localConnStatus) {
+      connectPill = <View style={styles.connectPillPlaceholder}><ActivityIndicator size="small" color={C.muted} /></View>;
     } else if (status === 'connected') {
-      connectAction = (
-        <View style={styles.mcPillConnected}>
-          <Ionicons name="checkmark-circle-outline" size={13} color={C.green} />
-          <Text style={styles.mcPillConnectedText}>Connected</Text>
+      connectPill = (
+        <View style={[styles.connectPill, styles.connectPillConnected]}>
+          <Ionicons name="checkmark-circle-outline" size={12} color={C.green} />
+          <Text style={styles.connectPillConnectedText}>Connected</Text>
         </View>
       );
     } else if (status === 'pending') {
-      connectAction = (
-        <TouchableOpacity style={styles.mcPillPending} onPress={handleCancelRequest} disabled={connectLoading} activeOpacity={0.75}>
-          {connectLoading ? <ActivityIndicator size="small" color={C.amber} /> : <><Ionicons name="time-outline" size={13} color={C.amber} /><Text style={styles.mcPillPendingText}>Pending</Text></>}
+      connectPill = (
+        <TouchableOpacity style={[styles.connectPill, styles.connectPillPending]} onPress={handleCancelRequest} activeOpacity={0.75}>
+          <Ionicons name="time-outline" size={12} color={C.amber} />
+          <Text style={styles.connectPillPendingText}>Pending</Text>
         </TouchableOpacity>
       );
     } else {
-      connectAction = (
-        <TouchableOpacity style={styles.mcPillConnect} onPress={handleConnect} disabled={connectLoading} activeOpacity={0.75}>
-          {connectLoading ? <ActivityIndicator size="small" color={C.primary} /> : <><Ionicons name="person-add-outline" size={13} color={C.primary} /><Text style={styles.mcPillConnectText}>Connect</Text></>}
+      connectPill = (
+        <TouchableOpacity style={[styles.connectPill, styles.connectPillDefault]} onPress={handleConnect} disabled={connectBusy} activeOpacity={0.75}>
+          {connectBusy
+            ? <ActivityIndicator size="small" color={C.primary} />
+            : <><Ionicons name="person-add-outline" size={12} color={C.primary} /><Text style={styles.connectPillDefaultText}>Connect</Text></>
+          }
         </TouchableOpacity>
       );
     }
   }
 
   return (
-    <TouchableOpacity style={styles.mcCard} onPress={() => navigation.navigate('AlumniPublicProfile', { alumni: user })} activeOpacity={0.72}>
-
-      {/* ── Row 1: Avatar · Name/Username · Connect pill · ⋯ menu ── */}
-      <View style={styles.mcTopRow}>
-        <Avatar picture={picture} name={name} size={48} />
-        <View style={styles.mcIdentity}>
-          <Text style={styles.mcName} numberOfLines={1}>{name}</Text>
-          {username ? <Text style={styles.mcUsername}>@{username}</Text> : null}
+    <TouchableOpacity
+      style={styles.mentorCard}
+      onPress={() => navigation.navigate('AlumniPublicProfile', { alumni: user })}
+      activeOpacity={0.72}
+    >
+      {/* Row 1: Avatar + Identity + Actions */}
+      <View style={styles.mentorCardRow}>
+        <Avatar picture={picture} name={name} size={46} />
+        <View style={styles.mentorCardIdentity}>
+          <Text style={styles.mentorCardName} numberOfLines={1}>{name}</Text>
+          {username ? <Text style={styles.mentorCardUsername}>@{username}</Text> : null}
         </View>
-        <View style={styles.mcActions}>
-          {connectAction}
-          {/* [NEW] ⋯ options button — always visible */}
-          <TouchableOpacity style={styles.mcMoreBtn} onPress={handleOptions} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="ellipsis-horizontal" size={16} color={C.muted} />
+        <View style={styles.mentorCardActions}>
+          {connectPill}
+          <TouchableOpacity
+            style={styles.moreBtn}
+            onPress={handleOptions}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="ellipsis-horizontal" size={15} color={C.muted} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.mcDivider} />
-
-      {/* ── Row 2: Role badge · Subline · [NEW] Follow pill ── */}
-      <View style={styles.mcInfoRow}>
-        {role ? (
-          <View style={[styles.mcRoleBadge, role === 'alumni' ? styles.mcRoleBadgeAlumni : styles.mcRoleBadgeStudent]}>
-            <Text style={[styles.mcRoleBadgeText, role === 'alumni' ? styles.mcRoleBadgeAlumniText : styles.mcRoleBadgeStudentText]}>
-              {role === 'alumni' ? 'Alumni' : 'Student'}
-            </Text>
-          </View>
-        ) : null}
-        {subLine ? <Text style={styles.mcSubline} numberOfLines={1}>{subLine}</Text> : null}
-
-        {/* [NEW] Follow / Unfollow pill — shown in My Network & Discover */}
+      {/* Row 2: Role + Subline + Follow pill */}
+      <View style={styles.mentorCardMeta}>
+        <RoleBadge role={role} />
+        {subLine ? <Text style={styles.mentorCardSubline} numberOfLines={1}>{subLine}</Text> : null}
         {(tabType === TABS.MY_CONNECTIONS || tabType === TABS.DISCOVER) && (
           <TouchableOpacity
-            style={[styles.mcFollowPill, isFollowing && styles.mcFollowingPill]}
+            style={[styles.followPill, localFollowing && styles.followingPill]}
             onPress={handleFollowToggle}
-            disabled={followLoading}
+            disabled={followBusy}
             activeOpacity={0.75}
           >
-            {followLoading ? (
-              <ActivityIndicator size="small" color={isFollowing ? C.purple : C.primary} />
-            ) : (
-              <>
-                <Ionicons
-                  name={isFollowing ? 'bookmark' : 'bookmark-outline'}
-                  size={11}
-                  color={isFollowing ? C.purple : C.primary}
-                />
-                <Text style={[styles.mcFollowPillText, isFollowing && styles.mcFollowingPillText]}>
-                  {isFollowing ? 'Following' : 'Follow'}
-                </Text>
-              </>
-            )}
+            {followBusy
+              ? <ActivityIndicator size="small" color={localFollowing ? C.purple : C.primary} />
+              : <>
+                  <Ionicons name={localFollowing ? 'bookmark' : 'bookmark-outline'} size={11} color={localFollowing ? C.purple : C.primary} />
+                  <Text style={[styles.followPillText, localFollowing && styles.followingPillText]}>
+                    {localFollowing ? 'Following' : 'Follow'}
+                  </Text>
+                </>
+            }
           </TouchableOpacity>
         )}
       </View>
 
-      {/* ── Row 3: Chips ── */}
-      {hasChips && (
-        <View style={styles.mcChipRow}>
-          {showDegreeChips && degree ? (
-            <View style={[styles.mcChip, styles.mcChipPrimary]}>
+      {/* Row 3: Chips */}
+      {(degree || batch || visibleSkills.length > 0) && (
+        <View style={styles.chipsRow}>
+          {degree ? (
+            <View style={[styles.chip, styles.chipPrimary]}>
               <Ionicons name="school-outline" size={10} color={C.primary} />
-              <Text style={[styles.mcChipText, { color: C.primary }]} numberOfLines={1}>{degree}</Text>
+              <Text style={[styles.chipText, { color: C.primary }]} numberOfLines={1}>{degree}</Text>
             </View>
           ) : null}
-          {showDegreeChips && batch ? (
-            <View style={styles.mcChip}>
+          {batch ? (
+            <View style={styles.chip}>
               <Ionicons name="calendar-outline" size={10} color={C.subtext} />
-              <Text style={styles.mcChipText} numberOfLines={1}>{batch}</Text>
+              <Text style={styles.chipText} numberOfLines={1}>{batch}</Text>
             </View>
           ) : null}
           {visibleSkills.map((sk, i) => (
-            <View key={i} style={[styles.mcChip, styles.mcChipPrimary]}>
-              <Text style={[styles.mcChipText, { color: C.primary }]} numberOfLines={1}>{sk}</Text>
+            <View key={i} style={[styles.chip, styles.chipPrimary]}>
+              <Text style={[styles.chipText, { color: C.primary }]} numberOfLines={1}>{sk}</Text>
             </View>
           ))}
-          {overflow > 0 && <View style={styles.mcChip}><Text style={styles.mcChipText}>+{overflow}</Text></View>}
+          {overflow > 0 && <View style={styles.chip}><Text style={styles.chipText}>+{overflow}</Text></View>}
         </View>
       )}
-
-      <View style={styles.mcFooter}>
-        <Ionicons name="chevron-forward" size={15} color={C.border} />
-      </View>
     </TouchableOpacity>
   );
 }
 
-// ─── [NEW] Network Sub-tabs (Connections | Followers | Following) ─────────────
+// ─── Network Sub-tabs ─────────────────────────────────────────────────────────
 function NetworkSubTabs({ active, onChange, counts }) {
   const tabs = [
     { key: NETWORK_SUB_TABS.CONNECTIONS, label: 'Connections', count: counts.connections },
-    { key: NETWORK_SUB_TABS.FOLLOWERS,   label: 'Followers',   count: counts.followers },
-    { key: NETWORK_SUB_TABS.FOLLOWING,   label: 'Following',   count: counts.following },
+    { key: NETWORK_SUB_TABS.FOLLOWERS, label: 'Followers', count: counts.followers },
+    { key: NETWORK_SUB_TABS.FOLLOWING, label: 'Following', count: counts.following },
   ];
   return (
-    <View style={styles.networkSubTabBar}>
-      {tabs.map(tab => (
+    <View style={styles.subTabBar}>
+      {tabs.map(t => (
         <TouchableOpacity
-          key={tab.key}
-          style={[styles.networkSubTab, active === tab.key && styles.networkSubTabActive]}
-          onPress={() => onChange(tab.key)}
+          key={t.key}
+          style={[styles.subTab, active === t.key && styles.subTabActive]}
+          onPress={() => onChange(t.key)}
+          activeOpacity={0.75}
         >
-          <Text style={[styles.networkSubTabText, active === tab.key && styles.networkSubTabTextActive]}>
-            {tab.label}
-          </Text>
-          {tab.count != null && (
-            <View style={[styles.networkSubTabBadge, active === tab.key && styles.networkSubTabBadgeActive]}>
-              <Text style={[styles.networkSubTabBadgeText, active === tab.key && styles.networkSubTabBadgeTextActive]}>
-                {tab.count}
-              </Text>
+          <Text style={[styles.subTabText, active === t.key && styles.subTabTextActive]}>{t.label}</Text>
+          {t.count != null && (
+            <View style={[styles.subTabBadge, active === t.key && styles.subTabBadgeActive]}>
+              <Text style={[styles.subTabBadgeText, active === t.key && styles.subTabBadgeTextActive]}>{t.count}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -444,21 +494,50 @@ function NetworkSubTabs({ active, onChange, counts }) {
   );
 }
 
-// ─── Role Filter Modal ───────────────────────────────────────────────────────
+// ─── Request Sub-filter ───────────────────────────────────────────────────────
+function RequestSubFilter({ active, onChange, incomingCount, outgoingCount }) {
+  const filters = [
+    { key: REQUEST_SUB_FILTERS.ALL, label: 'All', count: incomingCount + outgoingCount },
+    { key: REQUEST_SUB_FILTERS.INCOMING, label: 'Incoming', count: incomingCount },
+    { key: REQUEST_SUB_FILTERS.OUTGOING, label: 'Outgoing', count: outgoingCount },
+  ];
+  return (
+    <View style={styles.subFilterRow}>
+      {filters.map(f => (
+        <TouchableOpacity
+          key={f.key}
+          style={[styles.subFilterPill, active === f.key && styles.subFilterPillActive]}
+          onPress={() => onChange(f.key)}
+          activeOpacity={0.75}
+        >
+          <Text style={[styles.subFilterPillText, active === f.key && styles.subFilterPillTextActive]}>{f.label}</Text>
+          {f.count > 0 && (
+            <View style={[styles.subFilterBadge, active === f.key && styles.subFilterBadgeActive]}>
+              <Text style={[styles.subFilterBadgeText, active === f.key && styles.subFilterBadgeTextActive]}>{f.count}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+// ─── Role Filter Modal ────────────────────────────────────────────────────────
 function RoleFilterModal({ visible, onClose, activeFilter, onSelect }) {
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalOverlayLight} activeOpacity={1} onPress={onClose}>
         <View style={styles.filterPopup}>
-          {Object.values(ROLE_FILTERS).map(filter => (
+          {Object.values(ROLE_FILTERS).map(f => (
             <TouchableOpacity
-              key={filter}
-              style={[styles.filterPopupItem, activeFilter === filter && styles.filterPopupItemActive]}
-              onPress={() => { onSelect(filter); onClose(); }}
+              key={f}
+              style={[styles.filterPopupItem, activeFilter === f && styles.filterPopupItemActive]}
+              onPress={() => { onSelect(f); onClose(); }}
             >
-              <Text style={[styles.filterPopupText, activeFilter === filter && styles.filterPopupTextActive]}>
-                {filter === ROLE_FILTERS.ALL ? 'All' : filter === ROLE_FILTERS.ALUMNI ? 'Alumni' : 'Students'}
+              <Text style={[styles.filterPopupText, activeFilter === f && styles.filterPopupTextActive]}>
+                {f === ROLE_FILTERS.ALL ? 'All' : f === ROLE_FILTERS.ALUMNI ? 'Alumni' : 'Students'}
               </Text>
+              {activeFilter === f && <Ionicons name="checkmark" size={16} color={C.primary} />}
             </TouchableOpacity>
           ))}
         </View>
@@ -467,34 +546,17 @@ function RoleFilterModal({ visible, onClose, activeFilter, onSelect }) {
   );
 }
 
-// ─── Request Sub-filter ───────────────────────────────────────────────────────
-function RequestSubFilter({ active, onChange }) {
-  return (
-    <View style={styles.requestSubFilter}>
-      {Object.values(REQUEST_SUB_FILTERS).map(filter => (
-        <TouchableOpacity
-          key={filter}
-          style={[styles.subFilterChip, active === filter && styles.subFilterChipActive]}
-          onPress={() => onChange(filter)}
-        >
-          <Text style={[styles.subFilterChipText, active === filter && styles.subFilterChipTextActive]}>
-            {filter === REQUEST_SUB_FILTERS.ALL ? 'All' : filter === REQUEST_SUB_FILTERS.INCOMING ? 'Incoming' : 'Outgoing'}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-
-// ─── Empty State ─────────────────────────────────────────────────────────────
+// ─── Empty State ──────────────────────────────────────────────────────────────
 function EmptyState({ icon, title, message, buttonText, onPress }) {
   return (
     <View style={styles.emptyWrap}>
-      <View style={styles.emptyIconWrap}><Ionicons name={icon} size={36} color={C.muted} /></View>
+      <View style={styles.emptyIconWrap}>
+        <Ionicons name={icon} size={34} color={C.muted} />
+      </View>
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyMsg}>{message}</Text>
       {buttonText && onPress && (
-        <TouchableOpacity style={styles.emptyBtn} onPress={onPress}>
+        <TouchableOpacity style={styles.emptyBtn} onPress={onPress} activeOpacity={0.8}>
           <Text style={styles.emptyBtnText}>{buttonText}</Text>
         </TouchableOpacity>
       )}
@@ -502,47 +564,45 @@ function EmptyState({ icon, title, message, buttonText, onPress }) {
   );
 }
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ConnectionScreen({ navigation }) {
-  const [userRole, setUserRole]           = useState(null);
-  const [myUserId, setMyUserId]           = useState(null);
-  const [activeTab, setActiveTab]         = useState(TABS.DISCOVER);
-  const [roleFilter, setRoleFilter]       = useState(ROLE_FILTERS.ALL);
+  const [userRole, setUserRole] = useState(null);
+  const [myUserId, setMyUserId] = useState(null);
+  const [activeTab, setActiveTab] = useState(TABS.DISCOVER);
+  const [roleFilter, setRoleFilter] = useState(ROLE_FILTERS.ALL);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [requestsSubFilter, setRequestsSubFilter]   = useState(REQUEST_SUB_FILTERS.ALL);
-  // [NEW] My Network sub-tab
+  const [requestsSubFilter, setRequestsSubFilter] = useState(REQUEST_SUB_FILTERS.ALL);
   const [networkSubTab, setNetworkSubTab] = useState(NETWORK_SUB_TABS.CONNECTIONS);
 
   const [myConnections, setMyConnections] = useState([]);
-  const [discoverList, setDiscoverList]   = useState([]);
+  const [discoverList, setDiscoverList] = useState([]);
   const [incomingRequests, setIncomingRequests] = useState([]);
   const [outgoingRequests, setOutgoingRequests] = useState([]);
-  const [statusMap, setStatusMap]         = useState({});
+  const [statusMap, setStatusMap] = useState({});
   const [statusLoading, setStatusLoading] = useState(false);
-  const [loading, setLoading]             = useState(true);
-  const [refreshing, setRefreshing]       = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // [NEW] Followers / Following lists + follow status tracking
-  const [followers, setFollowers]         = useState([]);
-  const [following, setFollowing]         = useState([]);
-  const [followingIds, setFollowingIds]   = useState(new Set()); // IDs the current user follows
-  const [blockedIds, setBlockedIds]       = useState(new Set()); // IDs the current user has blocked
+  const [followers, setFollowers] = useState([]);
+  const [following, setFollowing] = useState([]);
+  const [followingIds, setFollowingIds] = useState(new Set());
+  const [blockedIds, setBlockedIds] = useState(new Set());
 
   const [searchVisible, setSearchVisible] = useState(false);
-  const [searchQuery, setSearchQuery]     = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchStatusMap, setSearchStatusMap] = useState({});
   const [searchStatusLoading, setSearchStatusLoading] = useState(false);
-  const [searching, setSearching]         = useState(false);
+  const [searching, setSearching] = useState(false);
 
   const route = useRoute();
 
   useEffect(() => {
     const initialTab = route.params?.initialTab;
     if (initialTab) {
-      if (initialTab === 'requests')       setActiveTab(TABS.REQUESTS);
+      if (initialTab === 'requests') setActiveTab(TABS.REQUESTS);
       else if (initialTab === 'my_connections') setActiveTab(TABS.MY_CONNECTIONS);
-      else if (initialTab === 'discover')  setActiveTab(TABS.DISCOVER);
+      else if (initialTab === 'discover') setActiveTab(TABS.DISCOVER);
       navigation.setParams({ initialTab: undefined });
     }
   }, [route.params, navigation]);
@@ -590,7 +650,6 @@ export default function ConnectionScreen({ navigation }) {
     }
   };
 
-  // [NEW] Fetch followers + following for own profile, build followingIds Set
   const fetchFollowData = useCallback(async (userId) => {
     if (!userId) return;
     try {
@@ -602,7 +661,7 @@ export default function ConnectionScreen({ navigation }) {
       const followingData = followingRes.data || [];
       setFollowing(followingData);
       setFollowingIds(new Set(followingData.map(u => u.id)));
-    } catch {/* non-critical */}
+    } catch { }
   }, []);
 
   const fetchDiscover = async () => {
@@ -662,13 +721,12 @@ export default function ConnectionScreen({ navigation }) {
 
   useFocusEffect(useCallback(() => { loadData(); }, [activeTab, userRole, myUserId]));
 
-  // ── Connection handlers ───────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleConnect = async (id) => {
     await connectUser(id, {});
     const optimistic = { status: 'pending', is_sender: true };
     setStatusMap(prev => ({ ...prev, [id]: optimistic }));
     setSearchStatusMap(prev => ({ ...prev, [id]: optimistic }));
-    Alert.alert('Request Sent', 'Your connection request has been sent.');
   };
 
   const handleCancelRequest = async (id) => {
@@ -676,29 +734,25 @@ export default function ConnectionScreen({ navigation }) {
     setStatusMap(prev => ({ ...prev, [id]: { status: 'none' } }));
     setSearchStatusMap(prev => ({ ...prev, [id]: { status: 'none' } }));
     setOutgoingRequests(prev => prev.filter(req => (req.target_id || req.id) !== id));
-    Alert.alert('Request Cancelled', 'Connection request has been cancelled.');
   };
 
   const handleDisconnect = async (id) => {
     await removeConnection(id);
-    await loadData();
+    setMyConnections(prev => prev.filter(u => (u.id || u.alumni_id) !== id));
     if (activeTab === TABS.DISCOVER) await fetchDiscover();
   };
 
   const handleAcceptRequest = async (senderId) => {
     await respondToConnection(senderId, { action: 'accept' });
-    await fetchRequests();
-    await loadData();
+    setIncomingRequests(prev => prev.filter(r => (r.sender_id || r.id) !== senderId));
     Alert.alert('Accepted', 'You are now connected.');
   };
 
   const handleRejectRequest = async (senderId) => {
     await respondToConnection(senderId, { action: 'reject' });
-    await fetchRequests();
-    Alert.alert('Rejected', 'Request rejected.');
+    setIncomingRequests(prev => prev.filter(r => (r.sender_id || r.id) !== senderId));
   };
 
-  // [NEW] Follow / Unfollow toggle handler
   const handleFollowToggle = async (targetId, isCurrentlyFollowing) => {
     try {
       if (isCurrentlyFollowing) {
@@ -708,7 +762,6 @@ export default function ConnectionScreen({ navigation }) {
       } else {
         await followUser(targetId);
         setFollowingIds(prev => new Set([...prev, targetId]));
-        // Re-fetch following to get full object
         if (myUserId) {
           const res = await getFollowing(myUserId).catch(() => ({ data: [] }));
           setFollowing(res.data || []);
@@ -719,17 +772,15 @@ export default function ConnectionScreen({ navigation }) {
     }
   };
 
-  // [NEW] Block / Unblock handler
   const handleBlockToggle = (targetId, isCurrentlyBlocked, name) => {
     if (isCurrentlyBlocked) {
-      Alert.alert('Unblock User', `Unblock ${name}? They will be able to see your profile again.`, [
+      Alert.alert('Unblock User', `Unblock ${name}?`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Unblock', onPress: async () => {
             try {
               await unblockUser(targetId);
               setBlockedIds(prev => { const next = new Set(prev); next.delete(targetId); return next; });
-              Alert.alert('Unblocked', `${name} has been unblocked.`);
             } catch (err) {
               Alert.alert('Error', err.response?.data?.message || 'Failed to unblock.');
             }
@@ -737,47 +788,45 @@ export default function ConnectionScreen({ navigation }) {
         },
       ]);
     } else {
-      Alert.alert(
-        'Block User',
-        `Block ${name}? This will sever any existing connection and prevent future communication.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Block', style: 'destructive', onPress: async () => {
-              try {
-                await blockUser(targetId);
-                setBlockedIds(prev => new Set([...prev, targetId]));
-                // Remove from all local lists immediately
-                setMyConnections(prev => prev.filter(u => (u.id || u.alumni_id) !== targetId));
-                setDiscoverList(prev => prev.filter(u => (u.id || u.alumni_id) !== targetId));
-                setFollowers(prev => prev.filter(u => u.id !== targetId));
-                setFollowing(prev => prev.filter(u => u.id !== targetId));
-                setFollowingIds(prev => { const next = new Set(prev); next.delete(targetId); return next; });
-                Alert.alert('Blocked', `${name} has been blocked.`);
-              } catch (err) {
-                Alert.alert('Error', err.response?.data?.message || 'Failed to block.');
-              }
-            },
+      Alert.alert('Block User', `Block ${name}? This will remove any existing connection.`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block', style: 'destructive', onPress: async () => {
+            try {
+              await blockUser(targetId);
+              setBlockedIds(prev => new Set([...prev, targetId]));
+              setMyConnections(prev => prev.filter(u => (u.id || u.alumni_id) !== targetId));
+              setDiscoverList(prev => prev.filter(u => (u.id || u.alumni_id) !== targetId));
+              setFollowers(prev => prev.filter(u => u.id !== targetId));
+              setFollowing(prev => prev.filter(u => u.id !== targetId));
+              setFollowingIds(prev => { const next = new Set(prev); next.delete(targetId); return next; });
+            } catch (err) {
+              Alert.alert('Error', err.response?.data?.message || 'Failed to block.');
+            }
           },
-        ],
-      );
+        },
+      ]);
     }
   };
 
   // ── Search ────────────────────────────────────────────────────────────────
-  const handleSearch = async (text) => {
+  const searchTimer = useRef(null);
+  const handleSearch = (text) => {
     setSearchQuery(text);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
     if (text.length < 2) { setSearchResults([]); setSearchStatusMap({}); return; }
-    setSearching(true);
-    try {
-      const res = await searchUsers({ display_name: text });
-      const sorted = sortByRelevance(res.data || [], text);
-      setSearchResults(sorted);
-      setSearchStatusLoading(true);
-      try { const map = await fetchStatusMap(sorted); setSearchStatusMap(map); }
-      finally { setSearchStatusLoading(false); }
-    } catch { setSearchResults([]); setSearchStatusMap({}); }
-    finally { setSearching(false); }
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await searchUsers({ display_name: text });
+        const sorted = sortByRelevance(res.data || [], text);
+        setSearchResults(sorted);
+        setSearchStatusLoading(true);
+        try { const map = await fetchStatusMap(sorted); setSearchStatusMap(map); }
+        finally { setSearchStatusLoading(false); }
+      } catch { setSearchResults([]); }
+      finally { setSearching(false); }
+    }, 350); // debounced
   };
 
   const clearSearch = () => { setSearchQuery(''); setSearchResults([]); setSearchStatusMap({}); };
@@ -790,7 +839,7 @@ export default function ConnectionScreen({ navigation }) {
     });
   };
 
-  // ── Determine list to show ────────────────────────────────────────────────
+  // ── Data for current view ─────────────────────────────────────────────────
   let currentData = [];
   let emptyIcon = 'people-outline';
   let emptyTitle = '';
@@ -799,7 +848,6 @@ export default function ConnectionScreen({ navigation }) {
   let emptyButtonAction = null;
 
   if (activeTab === TABS.MY_CONNECTIONS) {
-    // [NEW] Sub-tab switching
     if (networkSubTab === NETWORK_SUB_TABS.CONNECTIONS) {
       currentData = filterByRole(myConnections);
       emptyTitle = 'No connections yet';
@@ -808,11 +856,12 @@ export default function ConnectionScreen({ navigation }) {
       emptyButtonAction = () => setActiveTab(TABS.DISCOVER);
     } else if (networkSubTab === NETWORK_SUB_TABS.FOLLOWERS) {
       currentData = filterByRole(followers);
+      emptyIcon = 'people-circle-outline';
       emptyTitle = 'No followers yet';
       emptyMessage = 'When someone follows you, they appear here';
-      emptyButtonText = null;
     } else {
       currentData = filterByRole(following);
+      emptyIcon = 'bookmark-outline';
       emptyTitle = "You're not following anyone";
       emptyMessage = 'Follow alumni and students to stay updated';
       emptyButtonText = 'Discover People';
@@ -820,6 +869,7 @@ export default function ConnectionScreen({ navigation }) {
     }
   } else if (activeTab === TABS.DISCOVER) {
     currentData = filterByRole(discoverList);
+    emptyIcon = 'search-outline';
     emptyTitle = 'No suggestions found';
     emptyMessage = 'Pull down to refresh or try searching';
     emptyButtonText = 'Search';
@@ -833,8 +883,9 @@ export default function ConnectionScreen({ navigation }) {
       ...outgoingRequests.map(req => ({ ...req, _requestType: 'outgoing' })),
     ];
     currentData = filterByRole(combined, 'role');
+    emptyIcon = 'mail-outline';
     emptyTitle = 'No pending requests';
-    emptyMessage = 'When someone sends you a request, it will appear here.';
+    emptyMessage = 'Incoming and outgoing requests will appear here.';
     emptyButtonText = 'Discover People';
     emptyButtonAction = () => setActiveTab(TABS.DISCOVER);
   }
@@ -883,49 +934,78 @@ export default function ConnectionScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.card} />
 
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Connections</Text>
-        <TouchableOpacity onPress={() => setSearchVisible(true)} style={styles.headerBtn}>
-          <Ionicons name="search-outline" size={28} color={C.text} />
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Network</Text>
+        <View style={styles.headerRight}>
+          {/* Role filter pill */}
+          {roleFilter !== ROLE_FILTERS.ALL && (
+            <TouchableOpacity
+              style={styles.activeFilterPill}
+              onPress={() => setFilterModalVisible(true)}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.activeFilterPillText}>
+                {roleFilter === ROLE_FILTERS.ALUMNI ? 'Alumni' : 'Students'}
+              </Text>
+              <Ionicons name="close" size={12} color={C.primary} onPress={() => setRoleFilter(ROLE_FILTERS.ALL)} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => setFilterModalVisible(true)} style={styles.headerIconBtn} activeOpacity={0.7}>
+            <Ionicons name="filter-outline" size={20} color={roleFilter !== ROLE_FILTERS.ALL ? C.primary : C.text} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setSearchVisible(true)} style={styles.headerIconBtn} activeOpacity={0.7}>
+            <Ionicons name="search-outline" size={20} color={C.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Main tab bar */}
+      {/* ── Main tabs ── */}
       <View style={styles.tabBar}>
         {[
-          { key: TABS.DISCOVER,        label: 'Discover' },
-          { key: TABS.MY_CONNECTIONS,  label: 'My Network' },
-          { key: TABS.REQUESTS,        label: 'Requests' },
+          { key: TABS.DISCOVER, label: 'Discover', icon: 'compass-outline' },
+          { key: TABS.MY_CONNECTIONS, label: 'My Network', icon: 'people-outline' },
+          { key: TABS.REQUESTS, label: 'Requests', icon: 'mail-outline', badge: incomingRequests.length },
         ].map(tab => (
           <TouchableOpacity
             key={tab.key}
             style={[styles.tab, activeTab === tab.key && styles.tabActive]}
             onPress={() => setActiveTab(tab.key)}
+            activeOpacity={0.8}
           >
-            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
+            <View style={styles.tabInner}>
+              <Ionicons name={tab.icon} size={16} color={activeTab === tab.key ? C.primary : C.muted} />
+              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
+              {tab.badge > 0 && (
+                <View style={styles.tabBadge}>
+                  <Text style={styles.tabBadgeText}>{tab.badge}</Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* [NEW] My Network sub-tabs */}
+      {/* ── Sub-tabs ── */}
       {activeTab === TABS.MY_CONNECTIONS && (
         <NetworkSubTabs
           active={networkSubTab}
           onChange={setNetworkSubTab}
-          counts={{
-            connections: myConnections.length,
-            followers: followers.length,
-            following: following.length,
-          }}
+          counts={{ connections: myConnections.length, followers: followers.length, following: following.length }}
+        />
+      )}
+      {activeTab === TABS.REQUESTS && (
+        <RequestSubFilter
+          active={requestsSubFilter}
+          onChange={setRequestsSubFilter}
+          incomingCount={incomingRequests.length}
+          outgoingCount={outgoingRequests.length}
         />
       )}
 
-      {activeTab === TABS.REQUESTS && (
-        <RequestSubFilter active={requestsSubFilter} onChange={setRequestsSubFilter} />
-      )}
-
+      {/* ── Content ── */}
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>
       ) : isEmpty ? (
@@ -937,39 +1017,47 @@ export default function ConnectionScreen({ navigation }) {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         />
       )}
 
-      {/* Search Modal */}
-      <Modal visible={searchVisible} animationType="slide" transparent>
-        <SafeAreaView style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      {/* ── Search Modal ── */}
+      <Modal visible={searchVisible} animationType="slide" transparent onRequestClose={() => { setSearchVisible(false); clearSearch(); }}>
+        <SafeAreaView style={styles.searchModalSafe}>
+          <View style={styles.searchModalSheet}>
+            {/* Drag handle */}
             <View style={styles.dragHandle} />
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Search Alumni</Text>
-              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => { setSearchVisible(false); clearSearch(); }}>
-                <Ionicons name="close" size={18} color={C.text} />
+
+            {/* Search bar */}
+            <View style={styles.searchBarRow}>
+              <View style={styles.searchBar}>
+                <Ionicons name="search" size={17} color={C.muted} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search by name…"
+                  placeholderTextColor={C.muted}
+                  value={searchQuery}
+                  onChangeText={handleSearch}
+                  autoFocus
+                  returnKeyType="search"
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="close-circle" size={16} color={C.muted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={() => { setSearchVisible(false); clearSearch(); }}
+                style={styles.searchCancelBtn}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.searchCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.searchBar}>
-              <Ionicons name="search" size={17} color={C.muted} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search by name…"
-                placeholderTextColor={C.muted}
-                value={searchQuery}
-                onChangeText={handleSearch}
-                autoFocus
-                returnKeyType="search"
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={clearSearch}>
-                  <Ionicons name="close-circle" size={16} color={C.muted} />
-                </TouchableOpacity>
-              )}
-            </View>
+
+            {/* Results */}
             {searching ? (
               <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>
             ) : searchResults.length > 0 ? (
@@ -997,11 +1085,14 @@ export default function ConnectionScreen({ navigation }) {
                 keyboardShouldPersistTaps="handled"
               />
             ) : searchQuery.length >= 2 ? (
-              <EmptyState icon="search-outline" title="No results" message={`No alumni matched "${searchQuery}"`} />
+              <EmptyState icon="search-outline" title="No results" message={`No users matched "${searchQuery}"`} />
             ) : (
               <View style={styles.searchHint}>
-                <Ionicons name="sparkles-outline" size={28} color={C.primaryBorder} />
-                <Text style={styles.searchHintText}>Type 2+ characters to search</Text>
+                <View style={styles.searchHintIconWrap}>
+                  <Ionicons name="search-outline" size={28} color={C.primaryBorder} />
+                </View>
+                <Text style={styles.searchHintTitle}>Search the network</Text>
+                <Text style={styles.searchHintSub}>Type at least 2 characters to find people</Text>
               </View>
             )}
           </View>
@@ -1018,126 +1109,382 @@ export default function ConnectionScreen({ navigation }) {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: C.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 10, paddingTop: 35, backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.border },
-  headerBtn: { padding: 8, borderRadius: 10 },
-  headerTitle: { fontSize: 27, fontWeight: '800', color: C.text, marginLeft: 10 },
 
-  // Tab bar
-  tabBar: { flexDirection: 'row', backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.border, paddingHorizontal: 4 },
-  tab: { flex: 1, paddingVertical: 13, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingTop: 36,
+    backgroundColor: C.card,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: C.text, letterSpacing: -0.5 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: C.bg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  activeFilterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: C.primarySoft,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: C.primaryBorder,
+  },
+  activeFilterPillText: { fontSize: 12, fontWeight: '700', color: C.primary },
+
+  // Main tab bar
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: C.card,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
   tabActive: { borderBottomColor: C.primary },
-  tabText: { fontSize: 14, fontWeight: '500', color: C.muted },
+  tabInner: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  tabText: { fontSize: 12.5, fontWeight: '600', color: C.muted },
   tabTextActive: { color: C.primary, fontWeight: '700' },
+  tabBadge: {
+    backgroundColor: C.coral,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  tabBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
-  // [NEW] Network sub-tabs
-  networkSubTabBar: { flexDirection: 'row', backgroundColor: C.card, paddingHorizontal: 12, paddingVertical: 8, gap: 8, borderBottomWidth: 1, borderBottomColor: C.border },
-  networkSubTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 7, borderRadius: 20, backgroundColor: C.divider },
-  networkSubTabActive: { backgroundColor: C.primarySoft },
-  networkSubTabText: { fontSize: 12, fontWeight: '600', color: C.subtext },
-  networkSubTabTextActive: { color: C.primary },
-  networkSubTabBadge: { backgroundColor: C.border, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1, minWidth: 20, alignItems: 'center' },
-  networkSubTabBadgeActive: { backgroundColor: C.primaryBorder },
-  networkSubTabBadgeText: { fontSize: 10, fontWeight: '700', color: C.muted },
-  networkSubTabBadgeTextActive: { color: C.primaryDark },
+  // Sub-tab bar (My Network)
+  subTabBar: {
+    flexDirection: 'row',
+    backgroundColor: C.card,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  subTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: C.divider,
+  },
+  subTabActive: { backgroundColor: C.primarySoft },
+  subTabText: { fontSize: 12, fontWeight: '600', color: C.subtext },
+  subTabTextActive: { color: C.primary },
+  subTabBadge: {
+    backgroundColor: C.border,
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+  },
+  subTabBadgeActive: { backgroundColor: C.primaryBorder },
+  subTabBadgeText: { fontSize: 10, fontWeight: '700', color: C.muted },
+  subTabBadgeTextActive: { color: C.primaryDark },
 
-  // Request sub-filter
-  requestSubFilter: { flexDirection: 'row', backgroundColor: C.card, paddingHorizontal: 16, paddingVertical: 8, gap: 12, borderBottomWidth: 1, borderBottomColor: C.border },
-  subFilterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: C.divider },
-  subFilterChipActive: { backgroundColor: C.primarySoft },
-  subFilterChipText: { fontSize: 13, fontWeight: '500', color: C.subtext },
-  subFilterChipTextActive: { color: C.primary, fontWeight: '700' },
+  // Sub-filter row (Requests)
+  subFilterRow: {
+    flexDirection: 'row',
+    backgroundColor: C.card,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  subFilterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: C.divider,
+  },
+  subFilterPillActive: { backgroundColor: C.primarySoft },
+  subFilterPillText: { fontSize: 13, fontWeight: '600', color: C.subtext },
+  subFilterPillTextActive: { color: C.primary },
+  subFilterBadge: {
+    backgroundColor: C.border,
+    borderRadius: 8,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  subFilterBadgeActive: { backgroundColor: C.primaryBorder },
+  subFilterBadgeText: { fontSize: 10, fontWeight: '700', color: C.muted },
+  subFilterBadgeTextActive: { color: C.primaryDark },
 
-  listContent: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 28 },
+  listContent: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 30 },
 
-  // Legacy RequestCard styles
-  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 16, padding: 14, gap: 12, borderWidth: 1, borderColor: C.border },
-  cardBody: { flex: 1 },
-  cardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 2 },
-  cardName: { fontSize: 15, fontWeight: '700', color: C.text, flex: 1 },
-  cardUsername: { fontSize: 12, color: C.muted, marginBottom: 1 },
-  cardSub: { fontSize: 12, color: C.subtext, marginBottom: 5 },
-  roleBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, marginTop: 4 },
+  // Role badge
+  roleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    flexShrink: 0,
+  },
   roleBadgeAlumni: { backgroundColor: C.primarySoft },
   roleBadgeStudent: { backgroundColor: C.greenSoft },
-  roleBadgeText: { fontSize: 10, fontWeight: '600', color: C.primary },
+  roleBadgeText: { fontSize: 10, fontWeight: '700' },
+  roleBadgeAlumniText: { color: '#4338CA' },
+  roleBadgeStudentText: { color: '#065F46' },
 
-  // MentorCard
-  mcCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 10 },
-  mcTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  mcIdentity: { flex: 1, minWidth: 0, gap: 2 },
-  mcName: { fontSize: 15, fontWeight: '700', color: C.text },
-  mcUsername: { fontSize: 12, color: C.muted },
-  // [NEW] Actions wrapper — keeps connect pill + ⋯ button side-by-side
-  mcActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
-  // [NEW] ⋯ more button
-  mcMoreBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.divider, justifyContent: 'center', alignItems: 'center' },
-  mcDivider: { height: 1, backgroundColor: C.divider, marginVertical: 10 },
-  // Info row — now includes follow pill
-  mcInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
-  mcRoleBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, flexShrink: 0 },
-  mcRoleBadgeAlumni: { backgroundColor: C.primarySoft },
-  mcRoleBadgeStudent: { backgroundColor: C.greenSoft },
-  mcRoleBadgeText: { fontSize: 10, fontWeight: '700' },
-  mcRoleBadgeAlumniText: { color: '#4338CA' },
-  mcRoleBadgeStudentText: { color: '#065F46' },
-  mcSubline: { flex: 1, fontSize: 12.5, color: C.subtext },
-  // [NEW] Follow pill
-  mcFollowPill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: C.primaryBorder, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4, flexShrink: 0 },
-  mcFollowingPill: { backgroundColor: C.purpleSoft, borderColor: C.purpleBorder },
-  mcFollowPillText: { fontSize: 11, fontWeight: '700', color: C.primary },
-  mcFollowingPillText: { color: C.purple },
-  // Chips
-  mcChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 8 },
-  mcChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.divider, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 3, maxWidth: 140 },
-  mcChipPrimary: { backgroundColor: C.primarySoft },
-  mcChipText: { fontSize: 11, fontWeight: '600', color: C.subtext },
-  mcFooter: { alignItems: 'flex-end' },
-  // Connect action pills
-  mcPillConnect: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: C.primary, borderRadius: 20, paddingHorizontal: 11, paddingVertical: 5, minHeight: 30, flexShrink: 0 },
-  mcPillConnectText: { fontSize: 12, fontWeight: '700', color: C.primary },
-  mcPillPending: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.amberSoft, borderWidth: 1.5, borderColor: C.amberBorder, borderRadius: 20, paddingHorizontal: 11, paddingVertical: 5, minHeight: 30, flexShrink: 0 },
-  mcPillPendingText: { fontSize: 12, fontWeight: '700', color: C.amber },
-  mcPillConnected: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.greenSoft, borderWidth: 1.5, borderColor: C.greenBorder, borderRadius: 20, paddingHorizontal: 11, paddingVertical: 5, minHeight: 30, flexShrink: 0 },
-  mcPillConnectedText: { fontSize: 12, fontWeight: '700', color: C.green },
-  mcPillRemove: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.coralSoft, borderWidth: 1.5, borderColor: C.coralBorder, borderRadius: 20, paddingHorizontal: 11, paddingVertical: 5, minHeight: 30, flexShrink: 0 },
-  mcPillRemoveText: { fontSize: 12, fontWeight: '700', color: C.coral },
-  mcPillPlaceholder: { width: 72, height: 30, justifyContent: 'center', alignItems: 'center' },
+  // Request card
+  requestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 14,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  requestCardBody: { flex: 1, gap: 6 },
+  requestCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  requestCardMeta: { flex: 1 },
+  requestCardName: { fontSize: 15, fontWeight: '700', color: C.text },
+  requestCardUsername: { fontSize: 12, color: C.muted, marginTop: 1 },
+  requestCardFooter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  requestCardSub: { fontSize: 12, color: C.subtext, flex: 1 },
+  requestCardActions: { flexDirection: 'row', gap: 6, flexShrink: 0 },
+  actionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    minHeight: 32,
+    minWidth: 32,
+    justifyContent: 'center',
+    borderWidth: 1.5,
+  },
+  actionPillAccept: { backgroundColor: C.greenSoft, borderColor: C.greenBorder },
+  actionPillAcceptText: { fontSize: 12, fontWeight: '700', color: C.green },
+  actionPillReject: { backgroundColor: C.coralSoft, borderColor: C.coralBorder },
+  actionPillCancel: { backgroundColor: C.amberSoft, borderColor: C.amberBorder },
+  actionPillCancelText: { fontSize: 12, fontWeight: '700', color: C.amber },
 
-  // RequestCard pills
-  pendingPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.amberSoft, borderWidth: 1.5, borderColor: C.amberBorder, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, minHeight: 30 },
-  pendingPillText: { fontSize: 12, fontWeight: '700', color: C.amber },
-  acceptPill: { backgroundColor: C.greenSoft, borderWidth: 1.5, borderColor: C.greenBorder, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, minHeight: 30, justifyContent: 'center' },
-  acceptPillText: { fontSize: 12, fontWeight: '700', color: C.green },
-  rejectPill: { backgroundColor: C.coralSoft, borderWidth: 1.5, borderColor: C.coralBorder, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, minHeight: 30, justifyContent: 'center' },
-  rejectPillText: { fontSize: 12, fontWeight: '700', color: C.coral },
+  // Mentor card
+  mentorCard: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+    gap: 10,
+  },
+  mentorCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  mentorCardIdentity: { flex: 1, minWidth: 0 },
+  mentorCardName: { fontSize: 15, fontWeight: '700', color: C.text },
+  mentorCardUsername: { fontSize: 12, color: C.muted, marginTop: 1 },
+  mentorCardActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  mentorCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  mentorCardSubline: { flex: 1, fontSize: 12.5, color: C.subtext },
+  moreBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: C.divider,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Connect pills
+  connectPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    minHeight: 30,
+    borderWidth: 1.5,
+    flexShrink: 0,
+  },
+  connectPillDefault: { borderColor: C.primary },
+  connectPillDefaultText: { fontSize: 12, fontWeight: '700', color: C.primary },
+  connectPillPending: { backgroundColor: C.amberSoft, borderColor: C.amberBorder },
+  connectPillPendingText: { fontSize: 12, fontWeight: '700', color: C.amber },
+  connectPillConnected: { backgroundColor: C.greenSoft, borderColor: C.greenBorder },
+  connectPillConnectedText: { fontSize: 12, fontWeight: '700', color: C.green },
+  connectPillRemove: { backgroundColor: C.coralSoft, borderColor: C.coralBorder },
+  connectPillRemoveText: { fontSize: 12, fontWeight: '700', color: C.coral },
+  connectPillPlaceholder: { width: 72, height: 30, justifyContent: 'center', alignItems: 'center' },
+
+  // Follow pill
+  followPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1.5,
+    borderColor: C.primaryBorder,
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    flexShrink: 0,
+  },
+  followingPill: { backgroundColor: C.purpleSoft, borderColor: C.purpleBorder },
+  followPillText: { fontSize: 11, fontWeight: '700', color: C.primary },
+  followingPillText: { color: C.purple },
+
+  // Skill chips
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: C.divider,
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    maxWidth: 130,
+  },
+  chipPrimary: { backgroundColor: C.primarySoft },
+  chipText: { fontSize: 11, fontWeight: '600', color: C.subtext },
 
   // Empty state
-  emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
-  emptyIconWrap: { width: 68, height: 68, borderRadius: 34, backgroundColor: C.divider, justifyContent: 'center', alignItems: 'center', marginBottom: 14 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 6 },
-  emptyMsg: { fontSize: 14, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
-  emptyBtn: { borderWidth: 1.5, borderColor: C.primary, borderRadius: 24, paddingHorizontal: 22, paddingVertical: 9 },
-  emptyBtnText: { fontSize: 14, fontWeight: '600', color: C.primary },
+  emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, paddingBottom: 40 },
+  emptyIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: C.divider,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 6, textAlign: 'center' },
+  emptyMsg: { fontSize: 13.5, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 22 },
+  emptyBtn: {
+    borderWidth: 1.5,
+    borderColor: C.primary,
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+  },
+  emptyBtnText: { fontSize: 14, fontWeight: '700', color: C.primary },
 
-  // Modals
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { flex: 1, backgroundColor: C.card, marginTop: 48, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  dragHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginTop: 10, marginBottom: 2 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.divider },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: C.text },
-  modalCloseBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.divider, justifyContent: 'center', alignItems: 'center' },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bg, borderRadius: 14, borderWidth: 1, borderColor: C.border, margin: 14, marginBottom: 4, paddingHorizontal: 12, gap: 8 },
-  searchInput: { flex: 1, paddingVertical: 11, fontSize: 15, color: C.text },
-  searchHint: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10 },
-  searchHintText: { fontSize: 14, color: C.muted, textAlign: 'center' },
+  // Search modal
+  searchModalSafe: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)', justifyContent: 'flex-end' },
+  searchModalSheet: {
+    flex: 1,
+    backgroundColor: C.card,
+    marginTop: 60,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  dragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.border,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  searchBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: C.divider,
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.bg,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  searchInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: C.text },
+  searchCancelBtn: { paddingHorizontal: 4 },
+  searchCancelText: { fontSize: 14, fontWeight: '600', color: C.primary },
+  searchHint: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10, paddingBottom: 80 },
+  searchHintIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: C.primarySoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  searchHintTitle: { fontSize: 16, fontWeight: '700', color: C.text },
+  searchHintSub: { fontSize: 13.5, color: C.muted, textAlign: 'center', paddingHorizontal: 32 },
+
+  // Filter popup
   modalOverlayLight: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
-  filterPopup: { backgroundColor: C.card, borderRadius: 16, padding: 8, minWidth: 140, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-  filterPopupItem: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
+  filterPopup: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 8,
+    minWidth: 160,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  filterPopupItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 11, paddingHorizontal: 16, borderRadius: 10 },
   filterPopupItemActive: { backgroundColor: C.primarySoft },
   filterPopupText: { fontSize: 15, color: C.text },
-  filterPopupTextActive: { color: C.primary, fontWeight: '600' },
+  filterPopupTextActive: { color: C.primary, fontWeight: '700' },
 });

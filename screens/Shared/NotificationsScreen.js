@@ -57,8 +57,8 @@ const TYPE_CONFIG = {
   system: { icon: 'settings-outline', color: C.muted, bg: C.divider, label: 'System' },
   announcement: { icon: 'megaphone-outline', color: '#7C3AED', bg: '#F5F3FF', label: 'Announcement' },
   event: { icon: 'calendar-outline', color: '#0891B2', bg: '#ECFEFF', label: 'Event' },
-  event_reminder: { icon: 'alarm-outline', color: '#0891B2', bg: '#ECFEFF', label: 'Event' },
-  event_update: { icon: 'create-outline', color: '#0891B2', bg: '#ECFEFF', label: 'Event' },
+  event_reminder: { icon: 'alarm-outline', color: '#0891B2', bg: '#ECFEFF', label: 'Reminder' },
+  event_update: { icon: 'create-outline', color: '#0891B2', bg: '#ECFEFF', label: 'Event Update' },
   event_cancelled: { icon: 'close-circle-outline', color: C.coral, bg: C.coralSoft, label: 'Cancelled' },
 };
 
@@ -86,104 +86,75 @@ const formatDate = (dateStr) => {
 };
 
 const handleNotificationPress = (notification, navigation) => {
-  const { type, reference_link, id: notificationId } = notification;
-
-  console.log('[Notification Pressed] type:', type, 'reference_link:', reference_link);
-
+  const { type, reference_link } = notification;
   const extractId = (path) => {
     if (!path) return null;
     const parts = path.split('/');
     return parts[parts.length - 1] || null;
   };
-
   const contentId = extractId(reference_link);
 
   switch (type) {
     case 'connection_request':
       navigation.navigate('Tabs', { screen: 'Network', params: { initialTab: 'requests' } });
       break;
-
     case 'connection_accepted':
       navigation.navigate('Tabs', { screen: 'Network', params: { initialTab: 'my_connections' } });
       break;
-
     case 'new_opportunity':
-      if (contentId) {
-        navigation.navigate('OpportunityDetail', { id: contentId });
-      } else {
-        navigation.navigate('Tabs', { screen: 'Opportunities' });
-      }
+      contentId
+        ? navigation.navigate('OpportunityDetail', { id: contentId })
+        : navigation.navigate('Tabs', { screen: 'Opportunities' });
       break;
-
     case 'announcement':
-      navigation.navigate('Tabs', { screen: 'Opportunities' });
-      break;
-
     case 'event':
     case 'event_reminder':
     case 'event_update':
     case 'event_cancelled':
       navigation.navigate('Tabs', { screen: 'Opportunities' });
       break;
-
     case 'new_message':
     case 'message':
-      if (reference_link) {
-        navigation.navigate('ChatDetail', {
-          participantId: contentId,
-          participantName: notification.sender_display_name,
-          participantPicture: notification.sender_profile_picture || null,
-          participantUsername: notification.sender_username,
-        });
-      } else {
-        navigation.navigate('Conversations');
-      }
+      reference_link
+        ? navigation.navigate('ChatDetail', {
+            participantId: contentId,
+            participantName: notification.sender_display_name,
+            participantPicture: notification.sender_profile_picture || null,
+            participantUsername: notification.sender_username,
+          })
+        : navigation.navigate('Conversations');
       break;
-
     case 'account_approved':
       navigation.navigate('Tabs', { screen: 'Profile' });
       break;
-
     case 'account_rejected':
-      Alert.alert(
-        'Account Rejected',
-        notification.message || 'Your account registration was not approved.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Account Rejected', notification.message || 'Your account registration was not approved.', [{ text: 'OK' }]);
       break;
-
     default:
       if (!reference_link) break;
-      if (reference_link.includes('/opportunities/')) {
-        navigation.navigate('OpportunityDetail', { id: contentId });
-      } else if (reference_link.includes('/events/')) {
-        navigation.navigate('EventDetail', { id: contentId });
-      } else if (reference_link.includes('/announcements/')) {
-        navigation.navigate('AnnouncementDetail', { id: contentId });
-      } else if (reference_link.includes('/profile/')) {
-        navigation.navigate('AlumniPublicProfile', { userId: contentId });
-      } else if (reference_link.includes('/chat/')) {
+      if (reference_link.includes('/opportunities/')) navigation.navigate('OpportunityDetail', { id: contentId });
+      else if (reference_link.includes('/events/')) navigation.navigate('EventDetail', { id: contentId });
+      else if (reference_link.includes('/announcements/')) navigation.navigate('AnnouncementDetail', { id: contentId });
+      else if (reference_link.includes('/profile/')) navigation.navigate('AlumniPublicProfile', { userId: contentId });
+      else if (reference_link.includes('/chat/'))
         navigation.navigate('ChatDetail', {
           participantId: contentId,
           participantName: notification.sender_display_name,
           participantPicture: notification.sender_profile_picture || null,
           participantUsername: notification.sender_username,
         });
-      }
       break;
   }
 };
 
-// ─── HTML Preview for notification messages ────────────────────────────────────
+// ─── HTML Preview ─────────────────────────────────────────────────────────────
 function NotificationHtmlPreview({ html, isUnread }) {
   const { width: windowWidth } = useWindowDimensions();
-  const contentWidth = windowWidth - 160; // approximate usable width inside card
-  const maxHeight = 19 * 2; // exactly 2 lines at lineHeight 19
+  const contentWidth = windowWidth - 160;
 
   if (!html || html.trim() === '') return null;
 
   const color = isUnread ? C.text : C.subtext;
-
   const tagsStyles = {
     body: { color, fontSize: 13.5, lineHeight: 19 },
     p: { color, fontSize: 13.5, lineHeight: 19, marginTop: 0, marginBottom: 0 },
@@ -196,7 +167,7 @@ function NotificationHtmlPreview({ html, isUnread }) {
   };
 
   return (
-    <View style={{ maxHeight, overflow: 'hidden' }}>
+    <View style={{ maxHeight: 38, overflow: 'hidden' }}>
       <RenderHtml
         contentWidth={contentWidth}
         source={{ html }}
@@ -209,33 +180,46 @@ function NotificationHtmlPreview({ html, isUnread }) {
   );
 }
 
-// ─── Swipeable Notification Item ─────────────────────────────────────────────
-function NotificationItem({ item, onPress, onDelete, navigation }) {
+// ─── Notification Item ────────────────────────────────────────────────────────
+// Uses a local `read` state for instant optimistic UI — no waiting for API.
+function NotificationItem({ item, onMarkRead, onDelete, navigation }) {
   const cfg = getTypeConfig(item.type);
-  const isUnread = !item.is_read;
+  // Local optimistic read state — starts from server value
+  const [localRead, setLocalRead] = useState(item.is_read);
+  const isUnread = !localRead;
+
   const translateX = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
+  const readingRef = useRef(false); // prevent duplicate API calls
 
-  const handleItemPress = () => {
-    if (isUnread) onPress(item.id, item.is_read);
+  const handlePress = () => {
+    // Immediately flip to read — no loading, no wait
+    if (isUnread && !readingRef.current) {
+      readingRef.current = true;
+      setLocalRead(true);          // optimistic local update
+      onMarkRead(item.id);          // fire-and-forget API call
+    }
     handleNotificationPress(item, navigation);
   };
 
-  const triggerDelete = () => {
-    onDelete(item.id);
+  const animateOut = (cb) => {
     Animated.parallel([
-      Animated.timing(translateX, { toValue: -400, duration: 250, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }),
-    ]).start();
+      Animated.timing(translateX, { toValue: 400, duration: 260, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 220, useNativeDriver: true }),
+    ]).start(cb);
   };
 
-  const handleDelete = () => {
+  const confirmDelete = () => {
     Alert.alert(
       'Delete Notification',
       'Remove this notification?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: triggerDelete },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => animateOut(() => onDelete(item.id)),
+        },
       ]
     );
   };
@@ -244,21 +228,22 @@ function NotificationItem({ item, onPress, onDelete, navigation }) {
     <Animated.View style={{ transform: [{ translateX }], opacity }}>
       <TouchableOpacity
         style={[styles.item, isUnread && styles.itemUnread]}
-        onPress={handleItemPress}
-        onLongPress={handleDelete}
-        activeOpacity={0.75}
-        delayLongPress={400}
+        onPress={handlePress}
+        onLongPress={confirmDelete}
+        activeOpacity={0.78}
+        delayLongPress={450}
       >
+        {/* Left accent bar */}
         {isUnread && <View style={[styles.unreadBar, { backgroundColor: cfg.color }]} />}
 
+        {/* Icon */}
         <View style={[styles.iconWrap, { backgroundColor: cfg.bg }]}>
           <Ionicons name={cfg.icon} size={20} color={cfg.color} />
         </View>
 
+        {/* Content */}
         <View style={styles.itemContent}>
-          {/* ✅ Replace plain Text with HTML rendering */}
           <NotificationHtmlPreview html={item.message} isUnread={isUnread} />
-
           <View style={styles.metaRow}>
             <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
               <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
@@ -267,9 +252,14 @@ function NotificationItem({ item, onPress, onDelete, navigation }) {
           </View>
         </View>
 
+        {/* Right column */}
         <View style={styles.rightCol}>
           {isUnread && <View style={[styles.unreadDot, { backgroundColor: cfg.color }]} />}
-          <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity
+            onPress={confirmDelete}
+            style={styles.deleteBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Ionicons name="trash-outline" size={15} color={C.muted} />
           </TouchableOpacity>
         </View>
@@ -278,8 +268,8 @@ function NotificationItem({ item, onPress, onDelete, navigation }) {
   );
 }
 
-// ─── Section Header ───────────────────────────────────────────────────────────
-function SectionHeader({ title, count }) {
+// ─── Section Label ────────────────────────────────────────────────────────────
+function SectionLabel({ title, count }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -293,39 +283,40 @@ function SectionHeader({ title, count }) {
 }
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
-function EmptyState() {
+function EmptyState({ filter }) {
+  const messages = {
+    unread: { icon: 'checkmark-done-circle-outline', title: 'Nothing unread', sub: 'You\'re all caught up. Check back later.' },
+    read: { icon: 'mail-open-outline', title: 'No read notifications', sub: 'Notifications you\'ve opened will appear here.' },
+    all: { icon: 'notifications-off-outline', title: 'All caught up!', sub: 'No notifications right now. We\'ll ping you when something arrives.' },
+  };
+  const m = messages[filter] || messages.all;
+
   return (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconWrap}>
-        <Ionicons name="notifications-off-outline" size={44} color={C.muted} />
+        <Ionicons name={m.icon} size={40} color={C.muted} />
       </View>
-      <Text style={styles.emptyTitle}>All caught up!</Text>
-      <Text style={styles.emptyMessage}>
-        No notifications right now. We'll ping you when something arrives.
-      </Text>
+      <Text style={styles.emptyTitle}>{m.title}</Text>
+      <Text style={styles.emptyMessage}>{m.sub}</Text>
     </View>
   );
 }
 
-// ─── Stats Bar ────────────────────────────────────────────────────────────────
-function StatsBar({ total, unread }) {
+// ─── Filter Pill ──────────────────────────────────────────────────────────────
+function FilterPill({ label, active, onPress, badge }) {
   return (
-    <View style={styles.statsBar}>
-      <View style={styles.statItem}>
-        <Text style={styles.statValue}>{total}</Text>
-        <Text style={styles.statLabel}>Total</Text>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={[styles.statValue, unread > 0 && { color: C.primary }]}>{unread}</Text>
-        <Text style={styles.statLabel}>Unread</Text>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={styles.statValue}>{total - unread}</Text>
-        <Text style={styles.statLabel}>Read</Text>
-      </View>
-    </View>
+    <TouchableOpacity
+      style={[styles.filterPill, active && styles.filterPillActive]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>{label}</Text>
+      {badge > 0 && (
+        <View style={[styles.pillBadge, active && styles.pillBadgeActive]}>
+          <Text style={[styles.pillBadgeText, active && styles.pillBadgeTextActive]}>{badge}</Text>
+        </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -334,7 +325,8 @@ export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState('all'); // 'all' | 'unread' | 'read'
+  const [filter, setFilter] = useState('all');
+  const markingAllRef = useRef(false);
 
   const fetchNotes = async (readFilter) => {
     try {
@@ -359,24 +351,34 @@ export default function NotificationsScreen({ navigation }) {
 
   useFocusEffect(useCallback(() => { fetchNotes(filter); }, [filter]));
 
-  const handleMarkRead = async (id, isRead) => {
-    if (isRead) return;
+  // Fire-and-forget: UI already updated optimistically inside the item
+  const handleMarkRead = async (id) => {
     try {
       await markNotificationRead(id);
+      // Sync server state without causing a re-render flicker
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     } catch {
-      Alert.alert('Error', 'Could not mark as read');
+      // Silently revert if needed — re-fetch to be safe
+      fetchNotes(filter);
     }
   };
 
   const handleMarkAllRead = async () => {
+    if (markingAllRef.current) return;
     const unread = notifications.filter(n => !n.is_read);
     if (!unread.length) return;
+
+    // Optimistic: flip all to read immediately
+    markingAllRef.current = true;
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+
     try {
       await Promise.all(unread.map(n => markNotificationRead(n.id)));
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch {
       Alert.alert('Error', 'Could not mark all as read');
+      fetchNotes(filter);
+    } finally {
+      markingAllRef.current = false;
     }
   };
 
@@ -393,19 +395,20 @@ export default function NotificationsScreen({ navigation }) {
   const handleClearAll = () => {
     if (!notifications.length) return;
     Alert.alert(
-      'Clear All Notifications',
-      'This will permanently remove all your notifications. Continue?',
+      'Clear All',
+      'This will permanently remove all your notifications.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Clear All',
           style: 'destructive',
           onPress: async () => {
+            setNotifications([]); // optimistic clear
             try {
               await clearAllNotifications();
-              setNotifications([]);
             } catch {
               Alert.alert('Error', 'Could not clear notifications');
+              fetchNotes(filter);
             }
           },
         },
@@ -413,18 +416,94 @@ export default function NotificationsScreen({ navigation }) {
     );
   };
 
+  const totalCount = notifications.length;
   const unreadCount = notifications.filter(n => !n.is_read).length;
+  const readCount = totalCount - unreadCount;
 
   const FILTERS = [
-    { key: 'all', label: 'All' },
-    { key: 'unread', label: 'Unread' },
-    { key: 'read', label: 'Read' },
+    { key: 'all', label: 'All', badge: totalCount },
+    { key: 'unread', label: 'Unread', badge: unreadCount },
+    { key: 'read', label: 'Read', badge: readCount },
   ];
+
+  // Split into sections for "all" view
+  const unreadItems = notifications.filter(n => !n.is_read);
+  const readItems = notifications.filter(n => n.is_read);
+
+  const renderSectionedList = () => {
+    if (filter !== 'all') {
+      return (
+        <FlatList
+          data={notifications}
+          keyExtractor={item => String(item.id)}
+          ListEmptyComponent={<EmptyState filter={filter} />}
+          ListHeaderComponent={
+            notifications.length > 0
+              ? <SectionLabel title={filter === 'unread' ? 'Unread' : 'Read'} count={notifications.length} />
+              : null
+          }
+          renderItem={({ item }) => (
+            <NotificationItem
+              item={item}
+              onMarkRead={handleMarkRead}
+              onDelete={handleDelete}
+              navigation={navigation}
+            />
+          )}
+          contentContainerStyle={notifications.length === 0 ? styles.emptyList : styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />
+          }
+        />
+      );
+    }
+
+    // Sectioned list: unread on top, read below
+    const sections = [];
+    if (unreadItems.length > 0) {
+      sections.push({ type: 'header', id: 'h_unread', title: 'New', count: unreadItems.length });
+      unreadItems.forEach(n => sections.push({ type: 'item', id: String(n.id), data: n }));
+    }
+    if (readItems.length > 0) {
+      sections.push({ type: 'header', id: 'h_read', title: 'Earlier', count: 0 });
+      readItems.forEach(n => sections.push({ type: 'item', id: String(n.id), data: n }));
+    }
+
+    return (
+      <FlatList
+        data={sections.length > 0 ? sections : [{ type: 'empty', id: 'empty' }]}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => {
+          if (item.type === 'header') return <SectionLabel title={item.title} count={item.count} />;
+          if (item.type === 'empty') return <EmptyState filter="all" />;
+          return (
+            <NotificationItem
+              item={item.data}
+              onMarkRead={handleMarkRead}
+              onDelete={handleDelete}
+              navigation={navigation}
+            />
+          );
+        }}
+        contentContainerStyle={sections.length === 0 ? styles.emptyList : styles.listContent}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={({ leadingItem }) =>
+          leadingItem?.type === 'header' ? null : <View style={{ height: 8 }} />
+        }
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />
+        }
+      />
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.card} />
 
+      {/* ── Header ── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={C.text} />
@@ -441,71 +520,49 @@ export default function NotificationsScreen({ navigation }) {
 
         <View style={styles.headerActions}>
           {unreadCount > 0 && (
-            <TouchableOpacity onPress={handleMarkAllRead} style={styles.iconBtn}>
-              <Ionicons name="checkmark-done-outline" size={20} color={C.primary} />
+            <TouchableOpacity onPress={handleMarkAllRead} style={styles.headerActionBtn} activeOpacity={0.7}>
+              <Ionicons name="checkmark-done-outline" size={18} color={C.primary} />
+              <Text style={styles.headerActionText}>Mark all read</Text>
             </TouchableOpacity>
           )}
           {notifications.length > 0 && (
-            <TouchableOpacity onPress={handleClearAll} style={styles.iconBtn}>
-              <Ionicons name="trash-outline" size={20} color={C.coral} />
+            <TouchableOpacity onPress={handleClearAll} style={[styles.headerActionBtn, styles.headerActionBtnDanger]} activeOpacity={0.7}>
+              <Ionicons name="trash-outline" size={16} color={C.coral} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
+    
+
+      {/* ── Filter tabs ── */}
       <View style={styles.filterRow}>
         {FILTERS.map(f => (
-          <TouchableOpacity
+          <FilterPill
             key={f.key}
-            style={[styles.filterTab, filter === f.key && styles.filterTabActive]}
+            label={f.label}
+            active={filter === f.key}
+            badge={f.badge}
             onPress={() => setFilter(f.key)}
-          >
-            <Text style={[styles.filterTabText, filter === f.key && styles.filterTabTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
+          />
         ))}
       </View>
 
+      {/* ── Content ── */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={C.primary} />
           <Text style={styles.loadingText}>Loading notifications…</Text>
         </View>
       ) : (
-        <FlatList
-          data={notifications}
-          keyExtractor={item => String(item.id)}
-          ListEmptyComponent={EmptyState}
-          ListHeaderComponent={
-            notifications.length > 0
-              ? <SectionHeader
-                title={filter === 'unread' ? 'Unread' : filter === 'read' ? 'Read' : 'Recent'}
-                count={notifications.length}
-              />
-              : null
-          }
-          renderItem={({ item }) => (
-            <NotificationItem
-              item={item}
-              onPress={handleMarkRead}
-              onDelete={handleDelete}
-              navigation={navigation}
-            />
-          )}
-          contentContainerStyle={notifications.length === 0 ? styles.emptyList : styles.listContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />
-          }
-          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        />
+        renderSectionedList()
       )}
 
+      {/* ── Hint bar ── */}
       {!loading && notifications.length > 0 && (
         <View style={styles.hintBar}>
-          <Ionicons name="information-circle-outline" size={13} color={C.muted} />
-          <Text style={styles.hintText}>Long-press or tap 🗑 to delete a notification</Text>
+          <Ionicons name="hand-left-outline" size={12} color={C.muted} />
+          <Text style={styles.hintText}>Long-press any notification to delete it</Text>
         </View>
       )}
     </SafeAreaView>
@@ -516,6 +573,7 @@ export default function NotificationsScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: C.bg },
 
+  // Header
   header: {
     paddingTop: 48,
     paddingBottom: 14,
@@ -533,13 +591,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 54,
+    marginRight: 8,
   },
   headerCenter: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 12,
     gap: 8,
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: C.text, letterSpacing: -0.3 },
@@ -550,73 +607,104 @@ const styles = StyleSheet.create({
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
   },
   headerBadgeText: { fontSize: 11, fontWeight: '700', color: '#fff' },
-  headerActions: { flexDirection: 'row', gap: 4 },
-  iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: C.bg,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  statsBar: {
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerActionBtn: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: C.primarySoft,
+    borderRadius: 18,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: C.primaryBorder,
+  },
+  headerActionBtnDanger: {
+    backgroundColor: C.coralSoft,
+    borderColor: '#FECACA',
+    paddingHorizontal: 8,
+  },
+  headerActionText: { fontSize: 12, fontWeight: '600', color: C.primary },
+
+  // Stats strip
+  statsStrip: {
     backgroundColor: C.card,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    paddingTop: 2,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
-  statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 18, fontWeight: '700', color: C.text },
-  statLabel: { fontSize: 11, color: C.muted, marginTop: 2, fontWeight: '500' },
-  statDivider: { width: 1, backgroundColor: C.border, marginVertical: 4 },
+  statsText: { fontSize: 12, color: C.muted, fontWeight: '500' },
+  statsNum: { fontWeight: '700', color: C.text },
 
+  // Filters
   filterRow: {
     flexDirection: 'row',
     backgroundColor: C.card,
     paddingHorizontal: 16,
-    paddingBottom: 12,
-    paddingTop: 6,
+    paddingVertical: 10,
     gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
-  filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 20,
     backgroundColor: C.bg,
     borderWidth: 1,
     borderColor: C.border,
   },
-  filterTabActive: {
+  filterPillActive: {
     backgroundColor: C.primarySoft,
     borderColor: C.primaryBorder,
   },
-  filterTabText: { fontSize: 13, fontWeight: '600', color: C.muted },
-  filterTabTextActive: { color: C.primary },
+  filterPillText: { fontSize: 13, fontWeight: '600', color: C.muted },
+  filterPillTextActive: { color: C.primary },
+  pillBadge: {
+    backgroundColor: C.border,
+    borderRadius: 8,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  pillBadgeActive: { backgroundColor: C.primaryBorder },
+  pillBadgeText: { fontSize: 10, fontWeight: '700', color: C.subtext },
+  pillBadgeTextActive: { color: C.primary },
 
+  // Section
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-    paddingTop: 4,
+    gap: 6,
+    marginBottom: 10,
+    marginTop: 4,
   },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: C.muted, letterSpacing: 0.5, textTransform: 'uppercase' },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: C.muted,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
   sectionBadge: {
     backgroundColor: C.border,
     borderRadius: 8,
-    paddingHorizontal: 7,
+    paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  sectionBadgeText: { fontSize: 11, fontWeight: '700', color: C.subtext },
+  sectionBadgeText: { fontSize: 10, fontWeight: '700', color: C.subtext },
 
+  // Notification item
   item: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -655,8 +743,7 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     flexShrink: 0,
   },
-  itemContent: { flex: 1, gap: 5 },
-  // Removed .message and .messageUnread styles as they are now handled by the HTML component
+  itemContent: { flex: 1, gap: 6 },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -665,11 +752,11 @@ const styles = StyleSheet.create({
   typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   typeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
   dateText: { fontSize: 11, color: C.muted, fontWeight: '500' },
-
   rightCol: { alignItems: 'center', gap: 8, marginLeft: 10 },
   unreadDot: { width: 7, height: 7, borderRadius: 4 },
   deleteBtn: { padding: 2 },
 
+  // States
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { fontSize: 14, color: C.muted },
   listContent: { padding: 16 },
@@ -678,22 +765,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 36,
-    gap: 12,
-    marginTop: -40,
+    paddingHorizontal: 40,
+    gap: 10,
+    paddingTop: 60,
   },
   emptyIconWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     backgroundColor: C.divider,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: C.text },
-  emptyMessage: { fontSize: 14, color: C.subtext, textAlign: 'center', lineHeight: 21 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: C.text },
+  emptyMessage: { fontSize: 13.5, color: C.subtext, textAlign: 'center', lineHeight: 20 },
 
+  // Hint bar
   hintBar: {
     flexDirection: 'row',
     alignItems: 'center',

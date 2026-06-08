@@ -38,8 +38,7 @@
             "backgroundColor": "#000000"
           }
         }
-      ],
-      "@react-native-community/datetimepicker"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -47,9 +46,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "9d3765b5-5d1a-4a0d-9f48-504c77592f33"
+        "projectId": "317e1c00-a14b-4b9e-80c2-d017f155b967"
       }
     },
-    "owner": "muhammadasimayubs-organization"
+    "owner": "asimayubs-organization"
   }
 }
